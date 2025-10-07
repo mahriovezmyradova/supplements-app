@@ -1,7 +1,11 @@
-import os, sqlite3, pandas as pd, streamlit as st
+import os
+import sqlite3
+import pandas as pd
+import streamlit as st
 from fpdf import FPDF
 from datetime import date
 from PIL import Image
+
 
 st.set_page_config("THERAPIEKONZEPT","💊",layout="wide")
 
