@@ -84,33 +84,6 @@ def patient_inputs():
     return data
 
 
-# All 5 fields in one row
-    c3, c4, c5, c6, c7 = st.columns([1, 1, 2, 2, 2])
-    with c3:
-        groesse = st.number_input("Grösse (cm)", min_value=0, max_value=300, step=1)
-    with c4:
-        gewicht = st.number_input("Gewicht (kg)", min_value=0, max_value=500, step=1)
-    with c5:
-        therapiebeginn = st.date_input("Therapiebeginn", value=date.today(), format="DD.MM.YYYY")
-    with c6:
-        dauer = st.selectbox("Voraussichtliche Dauer (Monate)", options=list(range(1,7)), index=5)
-    with c7:
-        tw_besprochen = st.radio("TW besprochen?", options=["Ja","Nein"], horizontal=True)
-
-    bekannte_allergie = st.text_input("Bekannte Allergie?")
-    diagnosen = st.text_area("Diagnosen", height=100, placeholder="Relevante Diagnosen...", label_visibility="visible")
-
-    return {
-        "patient": patient_name.strip(),
-        "geburtsdatum": geburtsdatum,
-        "therapiebeginn": therapiebeginn,
-        "dauer": dauer,
-        "groesse": groesse,
-        "gewicht": gewicht,
-        "tw_besprochen": tw_besprochen,
-        "allergie": bekannte_allergie.strip(),
-        "diagnosen": diagnosen.strip(),
-    }
 
 
 # --- Helpers ---
@@ -273,7 +246,6 @@ def generate_pdf(patient, supplements):
 
 # --- Main app ---
 def main():
-    #st.set_page_config("THERAPIEKONZEPT", layout="wide")
     st.title("THERAPIEKONZEPT")
 
     conn = get_conn()
@@ -281,6 +253,12 @@ def main():
 
     # --- Patient Info ---
     patient = patient_inputs()
+
+    # Initialize override keys for each supplement in session_state
+    for _, row in df.iterrows():
+        override_key = f"dauer_override_{row['id']}"
+        if override_key not in st.session_state:
+            st.session_state[override_key] = None  # None means no override, use main dauer
 
     # --- Supplements Form ---
     st.subheader("Nahrungsergänzungsmittel (NEM) VO")
@@ -319,10 +297,25 @@ def main():
 
             # Supplement name
             cols[0].markdown(row["name"])
+
+            override_key = f"dauer_override_{row['id']}"
+
+            # Determine initial dauer value: if overridden use it, else use main dauer
+            initial_dauer = st.session_state[override_key] if st.session_state[override_key] is not None else patient["dauer"]
+
+            # Dauer input, default to initial_dauer
             dauer_input = cols[1].number_input(
-                "", key=f"{row['id']}_dauer", min_value=1, max_value=12, value=patient["dauer"],
+                "", key=f"{row['id']}_dauer", min_value=1, max_value=12, value=initial_dauer,
                 label_visibility="collapsed"
             )
+
+            # Sync override state:
+            # - If input differs from main dauer, save override
+            # - If input matches main dauer, clear override (None)
+            if dauer_input != patient["dauer"]:
+                st.session_state[override_key] = dauer_input
+            else:
+                st.session_state[override_key] = None
 
             # Checkboxes
             cb_nue = cols[2].checkbox("", key=f"{row['id']}_Nuechtern")
@@ -337,7 +330,7 @@ def main():
                 label_visibility="collapsed"
             )
 
-            # Add to selected list if any box ticked
+            # Add supplement if any checkbox checked
             if any([cb_nue, cb_morg, cb_mitt, cb_abend, cb_nacht]):
                 selected.append({
                     "name": row["name"],
@@ -364,6 +357,7 @@ def main():
             file_name=f"RevitaClinic_Therapieplan_{patient.get('patient','')}.pdf",
             mime="application/pdf"
         )
+
 
 
 if __name__ == "__main__":
