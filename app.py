@@ -188,31 +188,35 @@ def generate_pdf(patient, supplements):
 
 
     # --- Supplements Table ---
+        # --- Supplements Table ---
     table_width = 277  # A4 landscape width (297) - margins (10+10)
-    pdf.set_fill_color(38,96,65)
-    pdf.set_text_color(255,255,255)
-    pdf.set_font("Helvetica","B",12)
-    pdf.cell(table_width,8,"NAHRUNGSERGÄNZUNGSMITTEL (NEM) VO",0,1,"L",True)
+    pdf.set_fill_color(38, 96, 65)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(table_width, 8, "NAHRUNGSERGÄNZUNGSMITTEL (NEM) VO", 0, 1, "L", True)
 
-    headers = ["Supplement", "Dauer", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentare"]
-    base_widths = [60, 18, 20, 20, 20, 20, 20]  # Supplement, Dauer, 5 checkboxes
+    # Correct headers & widths
+    headers = ["Supplement", "Dauer", "Dosierung", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
+    base_widths = [60, 18, 22, 18, 18, 18, 18, 18]  # 8 columns before Kommentar
     used_width = sum(base_widths)
     comment_width = table_width - used_width
     widths = base_widths + [comment_width]
 
-
-    pdf.set_font("Helvetica","B",10)
-    for w,h in zip(widths,headers):
-        pdf.cell(w,8,h,1,0,"C",True)
+    # Print table header
+    pdf.set_font("Helvetica", "B", 10)
+    for w, h in zip(widths, headers):
+        pdf.cell(w, 8, h, 1, 0, "C", True)
     pdf.ln()
 
-    pdf.set_text_color(0,0,0)
-    pdf.set_font("Helvetica","",9)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Helvetica", "", 9)
 
+    # Print table rows
     for s in supplements:
         row = [
             s.get("name", ""),
             s.get("Dauer", ""),
+            s.get("Dosierung", ""),
             s.get("Nüchtern", ""),
             s.get("Morgens", ""),
             s.get("Mittags", ""),
@@ -226,17 +230,18 @@ def generate_pdf(patient, supplements):
         comment_lines = int(pdf.get_string_width(comment_text) / (widths[-1] - 2)) + 1 if comment_text else 1
         row_height = max(line_height, line_height * comment_lines)
 
-    # Print first 7 columns (excluding comment)
+        # First 8 columns (excluding Kommentar)
         for i, (w, text) in enumerate(zip(widths[:-1], row[:-1])):
-            align = "L" if i == 0 else "C"  # First column = supplement name (left aligned), rest centered
+            align = "L" if i == 0 else "C"
             pdf.cell(w, row_height, (text or ""), 1, 0, align)
 
-    # Print Kommentar column (last column)
+        # Kommentar (last column)
         x = pdf.get_x()
         y = pdf.get_y()
         pdf.multi_cell(widths[-1], line_height, comment_text, 1)
         pdf.set_xy(x + widths[-1], y)
         pdf.ln(row_height)
+
 
 
     return bytes(pdf.output(dest="S"))
@@ -266,6 +271,24 @@ def main():
 
     with st.form("plan"):
 
+                # --- Detect if patient Dauer changed, and update all supplements without overrides ---
+        if "last_main_dauer" not in st.session_state:
+            st.session_state.last_main_dauer = patient["dauer"]
+
+        if st.session_state.last_main_dauer != patient["dauer"]:
+            for _, row in df.iterrows():
+                override_key = f"dauer_override_{row['id']}"
+                widget_key = f"{row['id']}_dauer"
+
+                # only reset if not overridden manually
+                if st.session_state[override_key] is None:
+                    current_val = st.session_state.get(widget_key)
+                    if current_val != patient["dauer"]:
+                        st.session_state.update({widget_key: patient["dauer"]})
+
+            st.session_state.last_main_dauer = patient["dauer"]
+
+
         # Inject compact CSS
         st.markdown("""
             <style>
@@ -285,15 +308,16 @@ def main():
         """, unsafe_allow_html=True)
 
         # Header row
-        header_cols = st.columns([2, 1, 1, 1, 1, 1, 1, 2])
-        headers = ["Supplement", "Dauer (M)", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
+        header_cols = st.columns([2.2, 1, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.5])
+        headers = ["Supplement", "Dauer (M)", "Dosierung", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
         for col, text in zip(header_cols, headers):
             col.markdown(f"**{text}**")
         st.markdown("---")
 
         # Each supplement row
         for _, row in df.iterrows():
-            cols = st.columns([2, 1, 1, 1, 1, 1, 1, 2])
+            cols = st.columns([2.2, 1, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.5])
+
 
             # Supplement name
             cols[0].markdown(row["name"])
@@ -309,6 +333,22 @@ def main():
                 label_visibility="collapsed"
             )
 
+            # Dosage dropdown (doctor can also type custom text)
+            dosage_presets = ["1x täglich", "2x täglich", "3x täglich", "Nach Bedarf", "Andere..."]
+            default_dosage = dosage_presets[0]
+
+            dosage_key = f"{row['id']}_dosage"
+            selected_dosage = cols[2].selectbox(
+                "", dosage_presets, key=dosage_key, label_visibility="collapsed"
+            )
+
+            # If "Andere..." chosen → allow custom dosage text input
+            custom_dosage = ""
+            if selected_dosage == "Andere...":
+                custom_dosage = cols[2].text_input(
+                    " ", key=f"{row['id']}_custom_dosage", placeholder="z. B. ½ TL morgens"
+                )
+
             # Sync override state:
             # - If input differs from main dauer, save override
             # - If input matches main dauer, clear override (None)
@@ -318,14 +358,14 @@ def main():
                 st.session_state[override_key] = None
 
             # Checkboxes
-            cb_nue = cols[2].checkbox("", key=f"{row['id']}_Nuechtern")
-            cb_morg = cols[3].checkbox("", key=f"{row['id']}_Morgens")
-            cb_mitt = cols[4].checkbox("", key=f"{row['id']}_Mittags")
-            cb_abend = cols[5].checkbox("", key=f"{row['id']}_Abends")
-            cb_nacht = cols[6].checkbox("", key=f"{row['id']}_Nachts")
+            cb_nue = cols[3].checkbox("", key=f"{row['id']}_Nuechtern")
+            cb_morg = cols[4].checkbox("", key=f"{row['id']}_Morgens")
+            cb_mitt = cols[5].checkbox("", key=f"{row['id']}_Mittags")
+            cb_abend = cols[6].checkbox("", key=f"{row['id']}_Abends")
+            cb_nacht = cols[7].checkbox("", key=f"{row['id']}_Nachts")
 
             # Kommentar field
-            comment = cols[7].text_input(
+            comment = cols[8].text_input(
                 "", key=f"{row['id']}_comment", placeholder="Kommentar",
                 label_visibility="collapsed"
             )
@@ -335,6 +375,7 @@ def main():
                 selected.append({
                     "name": row["name"],
                     "Dauer": f"{dauer_input} M",
+                    "Dosierung": custom_dosage or selected_dosage,
                     "Nüchtern": "X" if cb_nue else "",
                     "Morgens": "X" if cb_morg else "",
                     "Mittags": "X" if cb_mitt else "",
