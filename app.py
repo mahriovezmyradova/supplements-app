@@ -37,6 +37,31 @@ def get_conn():
 def fetch_supplements(conn):
     return pd.read_sql("SELECT * FROM supplements ORDER BY id", conn)
 
+# --- Default Darreichungsformen for known supplements ---
+DEFAULT_FORMS = {
+    "Magnesiumbisglycinat": "Pulver",
+    "Magnesiumthreonat": "Pulver",
+    "Liposomales Magnesium 200mg": "Kapseln",
+    "Vitamin C Pulver/Na Ascorbatpulver": "Pulver",
+    "Vitamin C 1000mg": "Kapseln",
+    "L-Carnitin (Carnipure)": "Kapseln",
+    "L-Carnitin (Carnipure) Lösung": "Lösung",
+    "Q10 400mg": "Kapseln",
+    "OPC": "Kapseln", 
+    "Lugolsche (Jod) 5% Tropfen": "Lösung",
+    "Lactoferrin": "Kapsel",
+    "Alpha GPC": "Kapseln",
+    "NMN 500mg": "Kapsel",
+    "Citicoline": "Kapseln",
+    "TransResveratol 1000mg": "Kapseln",
+    "Astaxanthin 18mg": "Kapseln",
+    "Lutein 40 mg": "Kapseln",
+    "MAP (Aminosäuremischung)": "Pulver",
+    "Tyrosin 500mg": "Kapseln",
+    "Lysin": "Pulver",
+    "Prolin": "Pulver"
+}
+
 # --- Patient inputs ---
 def patient_inputs():
     #st.markdown("Patient")
@@ -196,8 +221,8 @@ def generate_pdf(patient, supplements):
     pdf.cell(table_width, 8, "NAHRUNGSERGÄNZUNGSMITTEL (NEM) VO", 0, 1, "L", True)
 
     # Correct headers & widths
-    headers = ["Supplement", "Dauer", "Dosierung", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
-    base_widths = [60, 18, 22, 18, 18, 18, 18, 18]  # 8 columns before Kommentar
+    headers = ["Supplement", "Dauer", "Darreichungsform", "Dosierung", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
+    base_widths = [50, 14, 35, 19, 18, 18, 18, 18, 18]  # 9 columns before Kommentar
     used_width = sum(base_widths)
     comment_width = table_width - used_width
     widths = base_widths + [comment_width]
@@ -216,7 +241,8 @@ def generate_pdf(patient, supplements):
         row = [
             s.get("name", ""),
             s.get("Dauer", ""),
-            s.get("Dosierung", ""),
+            s.get("Darreichungsform", ""),
+            s.get("Dosierung", ""), 
             s.get("Nüchtern", ""),
             s.get("Morgens", ""),
             s.get("Mittags", ""),
@@ -231,9 +257,19 @@ def generate_pdf(patient, supplements):
         row_height = max(line_height, line_height * comment_lines)
 
         # First 8 columns (excluding Kommentar)
-        for i, (w, text) in enumerate(zip(widths[:-1], row[:-1])):
+        for i, (w, text, header) in enumerate(zip(widths[:-1], row[:-1], headers[:-1])):
             align = "L" if i == 0 else "C"
-            pdf.cell(w, row_height, (text or ""), 1, 0, align)
+
+    # For intake columns, show "number + x" (e.g. "3x")
+            if header in ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]:
+                display_text = f"{text}x" if str(text).strip() else ""
+            else:
+                display_text = str(text)
+
+            pdf.cell(w, row_height, display_text, 1, 0, align)
+
+
+
 
         # Kommentar (last column)
         x = pdf.get_x()
@@ -288,35 +324,54 @@ def main():
 
             st.session_state.last_main_dauer = patient["dauer"]
 
-
-        # Inject compact CSS
+        # Compact layout + centered headers (except first column)
         st.markdown("""
             <style>
+            /* Compact spacing between elements */
             div[data-testid="stVerticalBlock"] > div {
-                margin-bottom: -6px;
+                margin-bottom: -6px !important;
             }
+
             [data-testid="stCheckbox"] {
-                margin-top: -6px;
-                margin-bottom: -6px;
+                margin-top: -6px !important;
+                margin-bottom: -6px !important;
             }
+
             .custom-input input {
                 height: 30px !important;
                 font-size: 14px !important;
-                padding: 4px 6px;
+                padding: 4px 6px !important;
+            }
+
+            /* Center all header labels except the first column (Supplement) */
+            [data-testid="stHorizontalBlock"] > div[data-testid="column"]:not(:first-child) p {
+                text-align: center !important;
+                margin-bottom: 0px !important;
+            }
+
+            /* Keep Supplement header left-aligned */
+            [data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child p {
+                text-align: left !important;
+                margin-bottom: 0px !important;
             }
             </style>
         """, unsafe_allow_html=True)
 
         # Header row
-        header_cols = st.columns([2.2, 1, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.5])
-        headers = ["Supplement", "Dauer (M)", "Dosierung", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
+        header_cols = st.columns([2.2, 0.7, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
+        headers = ["Supplement", "Dauer (M)", "Darreichungsform", "Dosierung",
+           "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
+
         for col, text in zip(header_cols, headers):
             col.markdown(f"**{text}**")
+
+        # Divider line
         st.markdown("---")
+
 
         # Each supplement row
         for _, row in df.iterrows():
-            cols = st.columns([2.2, 1, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.5])
+            cols = st.columns([2.2, 0.7, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
 
 
             # Supplement name
@@ -334,19 +389,32 @@ def main():
             )
 
             # Dosage dropdown (doctor can also type custom text)
-            dosage_presets = ["1x täglich", "2x täglich", "3x täglich", "Nach Bedarf", "Andere..."]
-            default_dosage = dosage_presets[0]
+            dosage_presets = ["Kapseln", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML","Andere:"]
+            #default_dosage = dosage_presets[0]
+            default_form = DEFAULT_FORMS.get(row["name"], dosage_presets[0])
 
-            dosage_key = f"{row['id']}_dosage"
-            selected_dosage = cols[2].selectbox(
-                "", dosage_presets, key=dosage_key, label_visibility="collapsed"
+            darreichungsform_key = f"{row['id']}_darreichungsform"
+            selected_form = cols[2].selectbox(
+                "", dosage_presets, index=dosage_presets.index(default_form) if default_form in dosage_presets else 0,
+                key=darreichungsform_key, label_visibility="collapsed"
+            )
+        # Dosierung dropdown (new)
+            dosierung_options = ["", "100mg", "200mg", "300mg", "400mg", "500mg"]
+            dosierung_val = cols[3].selectbox(
+                "", dosierung_options, key=f"{row['id']}_dosierung", label_visibility="collapsed"
             )
 
+
+            #dosage_key = f"{row['id']}_dosage"
+            #selected_dosage = cols[2].selectbox(
+                #"", dosage_presets, key=dosage_key, label_visibility="collapsed"
+            #)
+
             # If "Andere..." chosen → allow custom dosage text input
-            custom_dosage = ""
-            if selected_dosage == "Andere...":
-                custom_dosage = cols[2].text_input(
-                    " ", key=f"{row['id']}_custom_dosage", placeholder="z. B. ½ TL morgens"
+            custom_form = ""
+            if selected_form == "Andere:":
+                custom_form = cols[2].text_input(
+                    " ", key=f"{row['id']}_custom_dosage", placeholder="z. B. Pulver"
                 )
 
             # Sync override state:
@@ -358,31 +426,38 @@ def main():
                 st.session_state[override_key] = None
 
             # Checkboxes
-            cb_nue = cols[3].checkbox("", key=f"{row['id']}_Nuechtern")
-            cb_morg = cols[4].checkbox("", key=f"{row['id']}_Morgens")
-            cb_mitt = cols[5].checkbox("", key=f"{row['id']}_Mittags")
-            cb_abend = cols[6].checkbox("", key=f"{row['id']}_Abends")
-            cb_nacht = cols[7].checkbox("", key=f"{row['id']}_Nachts")
+            # Dropdowns (1–5) for intake intensity/times per day
+            dose_options = ["", "1", "2", "3", "4", "5"]
+
+            nue_val = cols[4].selectbox("", dose_options, key=f"{row['id']}_Nuechtern", label_visibility="collapsed")
+            morg_val = cols[5].selectbox("", dose_options, key=f"{row['id']}_Morgens", label_visibility="collapsed")
+            mitt_val = cols[6].selectbox("", dose_options, key=f"{row['id']}_Mittags", label_visibility="collapsed")
+            abend_val = cols[7].selectbox("", dose_options, key=f"{row['id']}_Abends", label_visibility="collapsed")
+            nacht_val = cols[8].selectbox("", dose_options, key=f"{row['id']}_Nachts", label_visibility="collapsed")
+
 
             # Kommentar field
-            comment = cols[8].text_input(
+            comment = cols[9].text_input(
                 "", key=f"{row['id']}_comment", placeholder="Kommentar",
                 label_visibility="collapsed"
             )
 
             # Add supplement if any checkbox checked
-            if any([cb_nue, cb_morg, cb_mitt, cb_abend, cb_nacht]):
+            # Add supplement if any intake dropdown is selected (non-empty)
+            if any([nue_val, morg_val, mitt_val, abend_val, nacht_val]):
                 selected.append({
                     "name": row["name"],
                     "Dauer": f"{dauer_input} M",
-                    "Dosierung": custom_dosage or selected_dosage,
-                    "Nüchtern": "X" if cb_nue else "",
-                    "Morgens": "X" if cb_morg else "",
-                    "Mittags": "X" if cb_mitt else "",
-                    "Abends": "X" if cb_abend else "",
-                    "Nachts": "X" if cb_nacht else "",
+                    "Darreichungsform": custom_form or selected_form,
+                    "Dosierung": dosierung_val,
+                    "Nüchtern": nue_val,
+                    "Morgens": morg_val,
+                    "Mittags": mitt_val,
+                    "Abends": abend_val,
+                    "Nachts": nacht_val,
                     "Kommentar": comment
                 })
+
 
         submitted = st.form_submit_button("PDF generieren")
 

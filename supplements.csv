@@ -1,65 +1,65 @@
-id,name,unit,category
-S001,Magnesiumbisglycinat-Pulver,g,Main Vitamins
-S002,Magnesiumthreonat-Pulver,g,Main Vitamins
-S003,Liposomales Magnesium Kapseln 200mg,Kapseln,Main Vitamins
-S004,Vitamin C Pulver/Na Ascorbatpulver,g,Main Vitamins
-S005,Vitamin C Kapseln 1000mg,mg,Main Vitamins
-S006,Ascorbyl Palmitat/liposomales Vit. C,mg,Main Vitamins
-S007,L-Carnitin (Carnipure) Kapseln,Kapseln,Main Vitamins
-S008,L-Carnitin (Carnipure) Lösung,ml,Main Vitamins
-S009,Kapselmischung nach UR V.9 Arnika,mg,Main Vitamins
-S010,Multi Mischung Vit. Min.,tab,Main Vitamins
-S011,Benfothiamin,mg,Main Vitamins
-S012,Vitamin B6 – P5P aktiviert (mit Zink),g,Main Vitamins
-S013,Mangan 10mg,mg,Main Vitamins
-S014,Nattokinase 100mg,Kapseln,Main Vitamins
-S015,Q10 Kaps. 400mg,mg,Main Vitamins
-S016,Selen 300 (100Stk) nüchtern Arnika,mg,Main Vitamins
-S017,Selen 200 nüchtern Na-Selenit,mg,Main Vitamins
-S018,Vitamin E Kap. __00 IU  E8 Tocotrienol,mg,Main Vitamins
-S019,Polyphenolkapsel Arnika,mg,Main Vitamins
-S020,Vitamin D3 __.000 IE __Tage a __ _____,mg
-S021,Vitamin K2 1000µg,mg,Main Vitamins
-S022,Calcium _____ mg,mg,Main Vitamins
-S023,OPC Kapseln,Kapseln,Main Vitamins
-S024,Lugolsche Lösung (Jod) 5% Tropfen,l,Main Vitamins
-S025,Kelp Tabl mit Jod,mg,Main Vitamins
-S026,Zink 25mg  (Zink-Glycinat),mg,Main Vitamins
-S027,Eisenpräparat  __mg,mg,Main Vitamins
-S028,R-Alpha Liponsäure 400mg,mg,Main Vitamins
-S029,Lactoferrin Kapsel,mg,Main Vitamins
-S030,Quercetin 500mg,mg,Main Vitamins
-S031,Enzyme – Multienzym / Superenzym,mg,Main Vitamins
-S032,Sulbutiamin,g,Main Vitamins
-S033,Spermiding,g,Main Vitamins
-S034,Berberine (plaquefrei),kapseln,Main Vitamins
-S035,Benfotiamine (B1 fürs Nervensystem),mg,Main Vitamins
-S036,Huperzine,mg,Main Vitamins
-S037,Kalium,mg,Main Vitamins
-S038,Lithiumorotat 1mg,mg,Main Vitamins
-S039,Lithiumorotat 5mg,mg,Main Vitamins
-S040,Omega 3 Öl 1 EL=2g EPA/DHA,mg,Gehirn / Gedächtnis
-S041,Alpha GPC Kapseln,mg,Gehirn / Gedächtnis
-S042,Phosphatidylserin / Phosphatidylcholin,mg,Gehirn / Gedächtnis
-S043,NMN Kapsel 500mg,mg,Gehirn / Gedächtnis
-S044,NAD+ liposomal 500mg,mg,Gehirn / Gedächtnis
-S045,Citicoline Kapseln,mg,Gehirn / Gedächtnis
-S046,TransResveratol Kapseln 1000mg,Kapseln,Gehirn / Gedächtnis
-S047,Astaxanthin 18mg Kapseln,Kapseln,Gehirn / Gedächtnis
-S048,Lutein 40 mg Kapseln,Kapseln,Gehirn / Gedächtnis
-S050,Piracetam memory,g,Gehirn / Gedächtnis
-S051,Aniracetam learning,g,Gehirn / Gedächtnis
-S052,MAP Pulver (Aminosäuremischung),g,Aminosäuren
-S053,Proteinshake 2 ML in Wasser/Nussmi.,g,Aminosäuren
-S054,Tyrosin Kapseln 500mg,mg,Aminosäuren
-S055,5HTP 200mg,mg,Aminosäuren
-S056,5HTP 300mg,mg,Aminosäuren
-S057,5HTP 600mg,mg,Aminosäuren
-S058,SAMe 400mg,mg,Aminosäuren
-S059,Phenylalanin 500mg,mg,Aminosäuren
-S060,GABA 1g,g,Aminosäuren
-S061, Tryptophan 1000mg,mg,Aminosäuren
-S062, Tryptophan 500mg,mg,Aminosäuren
-S063, Lysin Pulver,ml,Aminosäuren
-S064, Prolin Pulver,ml,Aminosäuren
-S065, Arginin Pulver 1g Kapseln,Kapseln,Aminosäuren
+id,name
+S001,Magnesiumbisglycinat
+S002,Magnesiumthreonat
+S003,Liposomales Magnesium 200mg
+S004,Vitamin C Pulver/Na Ascorbatpulver
+S005,Vitamin C 1000mg
+S006,Ascorbyl Palmitat/liposomales Vit. C
+S007,L-Carnitin (Carnipure)
+S008,L-Carnitin (Carnipure) Lösung
+S009,Kapselmischung nach UR V.9 Arnika
+S010,Multi Mischung Vit. Min.
+S011,Benfothiamin
+S012,Vitamin B6 – P5P aktiviert (mit Zink)
+S013,Mangan 10mg
+S014,Nattokinase 100mg
+S015,Q10 400mg
+S016,Selen 300 (100Stk) nüchtern Arnika
+S017,Selen 200 nüchtern Na-Selenit
+S018,Vitamin E Kap. __00 IU  E8 Tocotrienol
+S019,Polyphenolkapsel Arnika
+S020,Vitamin D3 __.000 IE __Tage a __ _____
+S021,Vitamin K2 1000mg
+S022,Calcium _____ mg
+S023,OPC
+S024,Lugolsche (Jod) 5% Tropfen
+S025,Kelp Tabl mit Jod
+S026,Zink 25mg  (Zink-Glycinat)
+S027,Eisenpräparat  __mg
+S028,R-Alpha Liponsäure 400mg
+S029,Lactoferrin
+S030,Quercetin 500mg
+S031,Enzyme – Multienzym / Superenzym
+S032,Sulbutiamin
+S033,Spermiding
+S034,Berberine (plaquefrei)
+S035,Benfotiamine (B1 fürs Nervensystem)
+S036,Huperzine
+S037,Kalium
+S038,Lithiumorotat 1mg
+S039,Lithiumorotat 5mg
+S040,Omega 3 Öl 1 EL=2g EPA/DHA,mg
+S041,Alpha GPC
+S042,Phosphatidylserin / Phosphatidylcholin
+S043,NMN 500mg
+S044,NAD+ liposomal 500mg
+S045,Citicoline
+S046,TransResveratol 1000mg
+S047,Astaxanthin 18mg
+S048,Lutein 40 mg
+S050,Piracetam memory
+S051,Aniracetam learning
+S052,MAP (Aminosäuremischung)
+S053,Proteinshake 2 ML in Wasser/Nussmi.
+S054,Tyrosin 500mg
+S055,5HTP 200mg
+S056,5HTP 300mg
+S057,5HTP 600mg
+S058,SAMe 400mg
+S059,Phenylalanin 500mg
+S060,GABA 1g
+S061, Tryptophan 1000mg
+S062, Tryptophan 500mg
+S063, Lysin
+S064, Prolin
+S065, Arginin Pulver 1g Kapseln
