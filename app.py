@@ -268,7 +268,7 @@ def load_patient_data(conn, patient_name):
         st.error(f"Fehler beim Laden: {str(e)}")
         return None, {}, {}, {}, {}
 
-# --- Improved Header with better centering ---
+# Replace the existing CSS with this updated version:
 st.markdown("""
 <style>
 .header-container {
@@ -298,6 +298,130 @@ st.markdown("""
     border-radius: 4px;
     border: 1px solid #c3e6cb;
     margin: 10px 0;
+}
+
+/* Main color theme - Replace red with RGB(38, 96, 65) */
+.stButton > button {
+    background-color: rgb(38, 96, 65) !important;
+    color: white !important;
+    border: 1px solid rgb(30, 76, 52) !important;
+}
+
+.stButton > button:hover {
+    background-color: rgb(30, 76, 52) !important;
+    border-color: rgb(25, 63, 43) !important;
+    color: white !important;
+}
+
+/* Primary button styling */
+.stButton > button[kind="primary"] {
+    background-color: rgb(38, 96, 65) !important;
+    color: white !important;
+}
+
+.stButton > button[kind="primary"]:hover {
+    background-color: rgb(30, 76, 52) !important;
+}
+
+/* Secondary button styling */
+.stButton > button[kind="secondary"] {
+    background-color: rgb(240, 242, 246) !important;
+    color: rgb(38, 96, 65) !important;
+    border: 1px solid rgb(38, 96, 65) !important;
+}
+
+.stButton > button[kind="secondary"]:hover {
+    background-color: rgb(230, 232, 236) !important;
+    color: rgb(30, 76, 52) !important;
+    border-color: rgb(30, 76, 52) !important;
+}
+
+/* Delete confirmation buttons */
+.stButton > button[key="confirm_delete"] {
+    background-color: rgb(220, 53, 69) !important;
+    color: white !important;
+    border: 1px solid rgb(200, 35, 51) !important;
+}
+
+.stButton > button[key="confirm_delete"]:hover {
+    background-color: rgb(200, 35, 51) !important;
+}
+
+/* Tabs styling */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 24px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    height: 50px;
+    white-space: pre-wrap;
+    background-color: #f0f2f6;
+    border-radius: 4px 4px 0px 0px;
+    gap: 1px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    color: rgb(38, 96, 65);
+}
+
+.stTabs [aria-selected="true"] {
+    background-color: rgb(38, 96, 65) !important;
+    color: white !important;
+}
+
+/* Checkbox styling */
+[data-testid="stCheckbox"] span {
+    color: rgb(38, 96, 65) !important;
+}
+
+/* Radio button styling */
+[data-testid="stRadio"] span {
+    color: rgb(38, 96, 65) !important;
+}
+
+/* Selectbox/Multiselect styling */
+[data-testid="stSelectbox"] span, 
+[data-testid="stMultiSelect"] span {
+    color: rgb(38, 96, 65) !important;
+}
+
+/* Text input/textarea focus */
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {
+    border-color: rgb(38, 96, 65) !important;
+    box-shadow: 0 0 0 0.2rem rgba(38, 96, 65, 0.25) !important;
+}
+
+/* Number input focus */
+.stNumberInput > div > div > input:focus {
+    border-color: rgb(38, 96, 65) !important;
+    box-shadow: 0 0 0 0.2rem rgba(38, 96, 65, 0.25) !important;
+}
+
+/* Date input focus */
+[data-testid="stDateInput"] > div > div > input:focus {
+    border-color: rgb(38, 96, 65) !important;
+    box-shadow: 0 0 0 0.2rem rgba(38, 96, 65, 0.25) !important;
+}
+
+/* Error messages */
+.stAlert.st-emotion-cache-1wrcr25 {
+    border-left-color: rgb(38, 96, 65) !important;
+}
+
+/* Warning messages */
+.stAlert.st-emotion-cache-1wrcr25.eeusbqq4 {
+    border-left-color: rgb(255, 193, 7) !important;
+}
+
+/* Success messages */
+.stAlert.st-emotion-cache-1wrcr25.e1f1d6gn3 {
+    border-left-color: rgb(25, 135, 84) !important;
+}
+
+/* PDF header color */
+.pdf-header {
+    background-color: rgb(38, 96, 65) !important;
+    color: white !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -357,12 +481,12 @@ DEFAULT_FORMS = {
 }
 
 # --- Patient inputs with proper autocomplete ---
+# --- Patient inputs with proper autocomplete ---
 def patient_inputs(conn):
     # Get patient names for autocomplete
     patient_names_df = fetch_patient_names(conn)
     patient_names = patient_names_df['patient_name'].tolist() if not patient_names_df.empty else []
     
-
     # Initialize session state
     if 'patient_data' not in st.session_state:
         st.session_state.patient_data = {}
@@ -376,19 +500,23 @@ def patient_inputs(conn):
         st.session_state.infusion_data = {}
     if 'last_loaded_patient' not in st.session_state:
         st.session_state.last_loaded_patient = None
+    # Add a flag to track if patient data was just loaded
+    if 'just_loaded_patient' not in st.session_state:
+        st.session_state.just_loaded_patient = False
 
     # Header controls (save, delete) - placed at the top
     st.markdown("#### Patientendaten")
     
     # --- Free text input with optional suggestions ---
     typed = st.text_input(
-        "Vor- und Nachname",
+        "Geben Sie den Namen ein und drücken Sie die Eingabetaste, um Vorschläge zu suchen.",
         value=st.session_state.patient_data.get("patient_name", ""),
-        placeholder="Geben Sie den Namen ein und drücken Sie die Eingabetaste, um Vorschläge zu suchen."
+        placeholder="Vor- und Nachname",
+        key="patient_name_input"
     )
 
     # Suggestions (filtered)
-    suggestions = [name for name in patient_names if typed.lower() in name.lower()]
+    suggestions = [name for name in patient_names if typed and typed.lower() in name.lower()]
 
     if typed and suggestions:
         st.write("**Vorschläge:**")
@@ -405,11 +533,32 @@ def patient_inputs(conn):
                     st.session_state.ernaehrung_data = ernaehrung_data
                     st.session_state.infusion_data = infusion_data
                     st.session_state.last_loaded_patient = name
+                    st.session_state.just_loaded_patient = True
                     st.rerun()
 
     # Use typed name as patient name
     patient_name_input = typed
 
+    # Also auto-load if user presses Enter with an exact match
+    if (patient_name_input and 
+        patient_name_input in patient_names and
+        patient_name_input != st.session_state.get("last_loaded_patient") and
+        not st.session_state.get("just_loaded_patient", False)):
+        result = load_patient_data(conn, patient_name_input)
+        if result[0]:
+            patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data = result
+            st.session_state.patient_data = patient_data
+            st.session_state.nem_prescriptions = nem_prescriptions
+            st.session_state.therapieplan_data = therapieplan_data
+            st.session_state.ernaehrung_data = ernaehrung_data
+            st.session_state.infusion_data = infusion_data
+            st.session_state.last_loaded_patient = patient_name_input
+            st.session_state.just_loaded_patient = True
+            st.rerun()
+    
+    # Reset the just loaded flag
+    if st.session_state.get("just_loaded_patient", False):
+        st.session_state.just_loaded_patient = False
 
     # Compact Row with 7 fields
     c1, c2, c3, c4, c5, c6, c7 = st.columns([1, 1, 1, 1, 1, 1, 1])
@@ -700,17 +849,17 @@ def main():
     # Save and Delete buttons at the top
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        save_button = st.button("💾 Alle Daten speichern", use_container_width=True, type="primary")
+        save_button = st.button("Alle Daten speichern", use_container_width=True, type="primary")
     with col2:
         # Delete button - only show if patient exists in database
         patient_names = fetch_patient_names(conn)['patient_name'].tolist()
         if patient["patient"] and patient["patient"] in patient_names:
-            if st.button("🗑️ Patient löschen", use_container_width=True, type="secondary"):
+            if st.button("Patient löschen", use_container_width=True, type="secondary"):
                 st.session_state.show_delete_confirmation = True
     
     # Show save success message if set
     if st.session_state.get("show_save_success", False):
-        st.markdown('<div class="success-message">✅ Alle Daten wurden erfolgreich gespeichert!</div>', unsafe_allow_html=True)
+        st.markdown('<div class="success-message">Alle Daten wurden erfolgreich gespeichert!</div>', unsafe_allow_html=True)
         # Clear the message after 3 seconds
         time.sleep(3)
         st.session_state.show_save_success = False
@@ -724,7 +873,7 @@ def main():
         
         col_confirm1, col_confirm2 = st.columns(2)
         with col_confirm1:
-            if st.button("❌ Ja, endgültig löschen", use_container_width=True, key="confirm_delete"):
+            if st.button("Ja, endgültig löschen", use_container_width=True, key="confirm_delete"):
                 if delete_patient_data(conn, patient["patient"]):
                     st.success(f"Patient '{patient['patient']}' wurde gelöscht!")
                     # Clear session state
@@ -740,7 +889,7 @@ def main():
                 else:
                     st.error("Fehler beim Löschen des Patienten!")
         with col_confirm2:
-            if st.button("✅ Abbrechen", use_container_width=True, key="cancel_delete"):
+            if st.button("Abbrechen", use_container_width=True, key="cancel_delete"):
                 st.session_state.show_delete_confirmation = False
                 st.info("Löschen abgebrochen")
                 st.rerun()
@@ -761,6 +910,7 @@ def main():
     infusion_data = {}
 
     # TAB 1: NEM
+        # TAB 1: NEM
     with tabs[0]:
         # Store NEM prescriptions in a container to access outside the form
         nem_container = st.container()
@@ -780,7 +930,7 @@ def main():
                                 st.session_state.update({widget_key: patient["dauer"]})
                     st.session_state.last_main_dauer = patient["dauer"]
 
-                # CSS for better styling
+                                # CSS for better styling
                 st.markdown("""
                     <style>
                     div[data-testid="stVerticalBlock"] > div {
@@ -802,6 +952,14 @@ def main():
                     [data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child p {
                         text-align: left !important;
                         margin-bottom: 0px !important;
+                    }
+                    /* Add this for the new color theme */
+                    .stButton > button {
+                        background-color: rgb(38, 96, 65) !important;
+                        color: white !important;
+                    }
+                    .stButton > button:hover {
+                        background-color: rgb(30, 76, 52) !important;
                     }
                     </style>
                 """, unsafe_allow_html=True)
@@ -864,31 +1022,45 @@ def main():
                         label_visibility="collapsed"
                     )
 
-                    # Darreichungsform dropdown
-                    dosage_presets = ["Kapseln", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML","Andere:"]
+                    # Darreichungsform dropdown - FIXED INDEX HANDLING
+                    dosage_presets = ["Kapseln", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML", "Andere:"]
                     
-                    # Find index for initial form
-                    form_index = dosage_presets.index(initial_form) if initial_form in dosage_presets else 0
+                    # Find index for initial form - FIXED
+                    form_index = 0  # Default to first item
+                    if initial_form:
+                        if initial_form in dosage_presets:
+                            form_index = dosage_presets.index(initial_form)
+                        else:
+                            # If form is not in presets, show "Andere:" and put custom value in text input
+                            form_index = dosage_presets.index("Andere:")
                     
                     selected_form = cols[2].selectbox(
                         "", dosage_presets, index=form_index,
                         key=f"{row['id']}_darreichungsform", label_visibility="collapsed"
                     )
 
-                    # Dosierung dropdown
+                    # Dosierung dropdown - FIXED INDEX HANDLING
                     dosierung_options = ["", "100mg", "200mg", "300mg", "400mg", "500mg"]
-                    dosierung_index = dosierung_options.index(initial_dosierung) if initial_dosierung in dosierung_options else 0
+                    dosierung_index = 0  # Default to empty
+                    if initial_dosierung in dosierung_options:
+                        dosierung_index = dosierung_options.index(initial_dosierung)
+                    
                     dosierung_val = cols[3].selectbox(
                         "", dosierung_options, index=dosierung_index,
                         key=f"{row['id']}_dosierung", label_visibility="collapsed"
                     )
 
-                    # Custom dosage text input
+                    # Custom dosage text input - FIXED VALUE HANDLING
                     custom_form = ""
                     if selected_form == "Andere:":
+                        # If we have a loaded custom form that's not in presets, use it
+                        custom_form_value = ""
+                        if initial_form and initial_form not in dosage_presets:
+                            custom_form_value = initial_form
                         custom_form = cols[2].text_input(
                             " ", key=f"{row['id']}_custom_dosage", placeholder="z. B. Pulver",
-                            value=initial_form if initial_form not in dosage_presets else ""
+                            value=custom_form_value,
+                            label_visibility="collapsed"
                         )
 
                     # Sync override state
@@ -897,37 +1069,46 @@ def main():
                     else:
                         st.session_state[override_key] = None
 
-                    # Intake dropdowns
+                    # Intake dropdowns - FIXED INDEX HANDLING
                     dose_options = ["", "1", "2", "3", "4", "5"]
                     
+                    # Find indices for intake times - FIXED
+                    nue_index = dose_options.index(initial_nue) if initial_nue in dose_options else 0
+                    morg_index = dose_options.index(initial_morg) if initial_morg in dose_options else 0
+                    mitt_index = dose_options.index(initial_mitt) if initial_mitt in dose_options else 0
+                    abend_index = dose_options.index(initial_abend) if initial_abend in dose_options else 0
+                    nacht_index = dose_options.index(initial_nacht) if initial_nacht in dose_options else 0
+                    
                     nue_val = cols[4].selectbox("", dose_options, 
-                                              index=dose_options.index(initial_nue) if initial_nue in dose_options else 0,
+                                              index=nue_index,
                                               key=f"{row['id']}_Nuechtern", label_visibility="collapsed")
                     morg_val = cols[5].selectbox("", dose_options,
-                                               index=dose_options.index(initial_morg) if initial_morg in dose_options else 0,
+                                               index=morg_index,
                                                key=f"{row['id']}_Morgens", label_visibility="collapsed")
                     mitt_val = cols[6].selectbox("", dose_options,
-                                               index=dose_options.index(initial_mitt) if initial_mitt in dose_options else 0,
+                                               index=mitt_index,
                                                key=f"{row['id']}_Mittags", label_visibility="collapsed")
                     abend_val = cols[7].selectbox("", dose_options,
-                                                index=dose_options.index(initial_abend) if initial_abend in dose_options else 0,
+                                                index=abend_index,
                                                 key=f"{row['id']}_Abends", label_visibility="collapsed")
                     nacht_val = cols[8].selectbox("", dose_options,
-                                                index=dose_options.index(initial_nacht) if initial_nacht in dose_options else 0,
+                                                index=nacht_index,
                                                 key=f"{row['id']}_Nachts", label_visibility="collapsed")
 
                     # Kommentar field
                     comment = cols[9].text_input(
                         "", key=f"{row['id']}_comment", placeholder="Kommentar",
-                        value=initial_comment, label_visibility="collapsed"
+                        value=initial_comment or "", label_visibility="collapsed"
                     )
 
                     # Add supplement if any intake dropdown is selected
                     if any([nue_val, morg_val, mitt_val, abend_val, nacht_val]):
+                        # Use custom form if available, otherwise use selected form
+                        final_form = custom_form if custom_form else selected_form
                         form_selected.append({
                             "name": row["name"],
                             "Dauer": f"{dauer_input} M",
-                            "Darreichungsform": custom_form or selected_form,
+                            "Darreichungsform": final_form,
                             "Dosierung": dosierung_val,
                             "Nüchtern": nue_val,
                             "Morgens": morg_val,
@@ -965,7 +1146,7 @@ def main():
         # Show PDF download button outside the form if PDF was generated
         if st.session_state.get("nem_pdf_bytes"):
             st.download_button(
-                "⬇️ NEM PDF herunterladen",
+                "NEM PDF herunterladen",
                 data=st.session_state.nem_pdf_bytes,
                 file_name=f"RevitaClinic_NEM_{patient.get('patient','')}.pdf",
                 mime="application/pdf",
@@ -1072,10 +1253,10 @@ def main():
         }
 
         # PDF button
-        if st.button("📄 Therapieplan PDF generieren"):
+        if st.button("Therapieplan PDF generieren"):
             pdf_bytes = generate_pdf(patient, therapieplan_data, "THERAPIEPLAN")
             st.download_button(
-                "⬇️ Therapieplan-PDF herunterladen",
+                "Therapieplan-PDF herunterladen",
                 data=pdf_bytes,
                 file_name=f"RevitaClinic_Therapieplan_{patient.get('patient','')}.pdf",
                 mime="application/pdf"
@@ -1168,10 +1349,10 @@ def main():
         }
 
         # PDF button
-        if st.button("📄 Ernährung & Lifestyle PDF generieren"):
+        if st.button("Ernährung & Lifestyle PDF generieren"):
             pdf_bytes = generate_pdf(patient, ernaehrung_data, "ERNÄHRUNG & LIFESTYLE")
             st.download_button(
-                "⬇️ Ernährung & Lifestyle PDF herunterladen",
+                "Ernährung & Lifestyle PDF herunterladen",
                 data=pdf_bytes,
                 file_name=f"RevitaClinic_Ernaehrung_{patient.get('patient', '')}.pdf",
                 mime="application/pdf"
@@ -1267,10 +1448,10 @@ def main():
         }
 
         # PDF button
-        if st.button("📄 Infusionstherapie PDF generieren"):
+        if st.button("Infusionstherapie PDF generieren"):
             pdf_bytes = generate_pdf(patient, infusion_data, "INFUSIONSTHERAPIE")
             st.download_button(
-                "⬇️ Infusionstherapie PDF herunterladen",
+                "Infusionstherapie PDF herunterladen",
                 data=pdf_bytes,
                 file_name=f"RevitaClinic_Infusion_{patient.get('patient', '')}.pdf",
                 mime="application/pdf"
