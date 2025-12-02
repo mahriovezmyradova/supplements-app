@@ -467,9 +467,9 @@ DEFAULT_FORMS = {
     "Q10 400mg": "Kapseln",
     "OPC": "Kapseln", 
     "Lugolsche (Jod) 5% Tropfen": "Lösung",
-    "Lactoferrin": "Kapsel",
+    "Lactoferrin": "Kapseln",
     "Alpha GPC": "Kapseln",
-    "NMN 500mg": "Kapsel",
+    "NMN 500mg": "Kapseln",
     "Citicoline": "Kapseln",
     "TransResveratol 1000mg": "Kapseln",
     "Astaxanthin 18mg": "Kapseln",
@@ -1023,7 +1023,7 @@ def main():
                     )
 
                     # Darreichungsform dropdown - FIXED INDEX HANDLING
-                    dosage_presets = ["Kapseln", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML", "Andere:"]
+                    dosage_presets = ["Kapseln","Lösung", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML", "Andere:"]
                     
                     # Find index for initial form - FIXED
                     form_index = 0  # Default to first item
