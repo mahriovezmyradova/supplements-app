@@ -36,14 +36,36 @@ CREATE TABLE patient_prescriptions (
   dauer INTEGER,
   darreichungsform TEXT,
   dosierung TEXT,
-  nuechtern TEXT,
-  morgens TEXT,
-  mittags TEXT,
-  abends TEXT,
-  nachts TEXT,
-  kommentar TEXT,
+  nuechtern TEXT DEFAULT '',
+  morgens TEXT DEFAULT '',
+  mittags TEXT DEFAULT '',
+  abends TEXT DEFAULT '',
+  nachts TEXT DEFAULT '',
+  kommentar TEXT DEFAULT '',
   FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE,
   FOREIGN KEY (supplement_id) REFERENCES supplements (id)
+);
+
+-- Create tables for other tab data
+CREATE TABLE IF NOT EXISTS patient_therapieplan (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id INTEGER UNIQUE,
+    data TEXT,
+    FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS patient_ernaehrung (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id INTEGER UNIQUE,
+    data TEXT,
+    FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS patient_infusion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id INTEGER UNIQUE,
+    data TEXT,
+    FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
 );
 """
 
@@ -73,15 +95,15 @@ def main():
     tables = cur.fetchall()
     print("Created tables:", [table[0] for table in tables])
     
-    # Verify patients table structure
-    cur.execute("PRAGMA table_info(patients)")
+    # Verify patient_prescriptions table structure
+    cur.execute("PRAGMA table_info(patient_prescriptions)")
     columns = cur.fetchall()
-    print("Patients table columns:")
+    print("\npatient_prescriptions table columns:")
     for col in columns:
         print(f"  {col[1]} ({col[2]})")
     
     con.close()
-    print("Database initialization completed successfully!")
+    print("\nDatabase initialization completed successfully!")
 
 if __name__ == "__main__":
     main()
