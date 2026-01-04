@@ -6,7 +6,7 @@ from fpdf import FPDF
 from datetime import date
 from PIL import Image
 import time
-import re
+import base64
 
 st.set_page_config("THERAPIEKONZEPT", layout="wide")
 
@@ -80,25 +80,19 @@ def save_patient_data(conn, patient_data, nem_prescriptions, therapieplan_data, 
             supplement_row = cursor.fetchone()
             if supplement_row:
                 supplement_id = supplement_row[0]
-                # Parse dauer value (remove " M" if present)
-                dauer_value = prescription["Dauer"]
-                if isinstance(dauer_value, str) and " M" in dauer_value:
-                    dauer_value = int(dauer_value.replace(" M", ""))
-                elif isinstance(dauer_value, str):
-                    dauer_value = int(re.sub(r'\D', '', dauer_value)) if re.sub(r'\D', '', dauer_value) else 0
-                
+                # Convert all values to strings with proper defaults
                 prescription_values = (
                     patient_id,
                     supplement_id,
-                    int(dauer_value),
-                    prescription.get("Darreichungsform", ""),
-                    prescription.get("Dosierung", ""),
-                    prescription.get("Nüchtern", ""),
-                    prescription.get("Morgens", ""),
-                    prescription.get("Mittags", ""),
-                    prescription.get("Abends", ""),
-                    prescription.get("Nachts", ""),
-                    prescription.get("Kommentar", "")
+                    int(prescription["Dauer"].replace(" M", "")),
+                    str(prescription.get("Darreichungsform", "")),
+                    str(prescription.get("Dosierung", "")),
+                    str(prescription.get("Nüchtern", "")),
+                    str(prescription.get("Morgens", "")),
+                    str(prescription.get("Mittags", "")),
+                    str(prescription.get("Abends", "")),
+                    str(prescription.get("Nachts", "")),
+                    str(prescription.get("Kommentar", ""))
                 )
                 cursor.execute(nem_sql, prescription_values)
         
@@ -133,33 +127,30 @@ def save_patient_data(conn, patient_data, nem_prescriptions, therapieplan_data, 
         # Save other tab data
         # Therapieplan
         cursor.execute("DELETE FROM patient_therapieplan WHERE patient_id = ?", (patient_id,))
-        if therapieplan_data:
-            therapieplan_sql = """
-            INSERT INTO patient_therapieplan 
-            (patient_id, data)
-            VALUES (?, ?)
-            """
-            cursor.execute(therapieplan_sql, (patient_id, str(therapieplan_data)))
+        therapieplan_sql = """
+        INSERT INTO patient_therapieplan 
+        (patient_id, data)
+        VALUES (?, ?)
+        """
+        cursor.execute(therapieplan_sql, (patient_id, str(therapieplan_data)))
         
         # Ernährung
         cursor.execute("DELETE FROM patient_ernaehrung WHERE patient_id = ?", (patient_id,))
-        if ernaehrung_data:
-            ernaehrung_sql = """
-            INSERT INTO patient_ernaehrung 
-            (patient_id, data)
-            VALUES (?, ?)
-            """
-            cursor.execute(ernaehrung_sql, (patient_id, str(ernaehrung_data)))
+        ernaehrung_sql = """
+        INSERT INTO patient_ernaehrung 
+        (patient_id, data)
+        VALUES (?, ?)
+        """
+        cursor.execute(ernaehrung_sql, (patient_id, str(ernaehrung_data)))
         
         # Infusion
         cursor.execute("DELETE FROM patient_infusion WHERE patient_id = ?", (patient_id,))
-        if infusion_data:
-            infusion_sql = """
-            INSERT INTO patient_infusion 
-            (patient_id, data)
-            VALUES (?, ?)
-            """
-            cursor.execute(infusion_sql, (patient_id, str(infusion_data)))
+        infusion_sql = """
+        INSERT INTO patient_infusion 
+        (patient_id, data)
+        VALUES (?, ?)
+        """
+        cursor.execute(infusion_sql, (patient_id, str(infusion_data)))
         
         conn.commit()
         return True
@@ -173,37 +164,21 @@ def delete_patient_data(conn, patient_name):
     try:
         cursor = conn.cursor()
         
-        # First, check if patient exists
+        # Get patient ID
         cursor.execute("SELECT id FROM patients WHERE patient_name = ?", (patient_name,))
         result = cursor.fetchone()
         
-        if not result:
-            st.warning(f"Patient '{patient_name}' nicht in der Datenbank gefunden.")
-            return False
-        
-        patient_id = result[0]
-        
-        # First delete from child tables
-        cursor.execute("DELETE FROM patient_prescriptions WHERE patient_id = ?", (patient_id,))
-        cursor.execute("DELETE FROM patient_therapieplan WHERE patient_id = ?", (patient_id,))
-        cursor.execute("DELETE FROM patient_ernaehrung WHERE patient_id = ?", (patient_id,))
-        cursor.execute("DELETE FROM patient_infusion WHERE patient_id = ?", (patient_id,))
-        
-        # Then delete the patient
-        cursor.execute("DELETE FROM patients WHERE id = ?", (patient_id,))
-        
-        conn.commit()
-        
-        # Verify deletion
-        cursor.execute("SELECT id FROM patients WHERE patient_name = ?", (patient_name,))
-        verify_result = cursor.fetchone()
-        
-        if verify_result:
-            st.error("Patient wurde nicht vollständig gelöscht!")
-            return False
-            
-        return True
-        
+        if result:
+            patient_id = result[0]
+            # Delete all related data (CASCADE will handle patient_prescriptions)
+            cursor.execute("DELETE FROM patient_therapieplan WHERE patient_id = ?", (patient_id,))
+            cursor.execute("DELETE FROM patient_ernaehrung WHERE patient_id = ?", (patient_id,))
+            cursor.execute("DELETE FROM patient_infusion WHERE patient_id = ?", (patient_id,))
+            # Delete patient (CASCADE will delete prescriptions)
+            cursor.execute("DELETE FROM patients WHERE id = ?", (patient_id,))
+            conn.commit()
+            return True
+        return False
     except Exception as e:
         conn.rollback()
         st.error(f"Fehler beim Löschen: {str(e)}")
@@ -217,7 +192,8 @@ def load_patient_data(conn, patient_name):
         patient_df = pd.read_sql(patient_sql, conn, params=(patient_name,))
         
         if patient_df.empty:
-            return None, {}, {}, {}, {}
+            # Patient doesn't exist - return empty data
+            return {}, [], {}, {}, {}
         
         patient_data = patient_df.iloc[0].to_dict()
         patient_id = patient_data["id"]
@@ -233,19 +209,52 @@ def load_patient_data(conn, patient_name):
         nem_df = pd.read_sql(nem_sql, conn, params=(patient_id,))
         
         nem_prescriptions = []
-        for _, row in nem_df.iterrows():
-            nem_prescriptions.append({
-                "name": row["name"],
-                "Dauer": f"{row['dauer']} M",
-                "Darreichungsform": row["darreichungsform"],
-                "Dosierung": row["dosierung"],
-                "Nüchtern": row["nuechtern"],
-                "Morgens": row["morgens"],
-                "Mittags": row["mittags"],
-                "Abends": row["abends"],
-                "Nachts": row["nachts"],
-                "Kommentar": row["kommentar"]
-            })
+        if not nem_df.empty:
+            for _, row in nem_df.iterrows():
+                # Ensure all fields are properly converted to strings
+                prescription = {
+                    "name": str(row["name"]) if pd.notna(row["name"]) else "",
+                    "Dauer": f"{int(row['dauer'])} M" if pd.notna(row['dauer']) else "0 M",
+                    "Darreichungsform": str(row["darreichungsform"]) if pd.notna(row["darreichungsform"]) else "",
+                    "Dosierung": str(row["dosierung"]) if pd.notna(row["dosierung"]) else "",
+                    "Nüchtern": str(row["nuechtern"]) if pd.notna(row["nuechtern"]) else "",
+                    "Morgens": str(row["morgens"]) if pd.notna(row["morgens"]) else "",
+                    "Mittags": str(row["mittags"]) if pd.notna(row["mittags"]) else "",
+                    "Abends": str(row["abends"]) if pd.notna(row["abends"]) else "",
+                    "Nachts": str(row["nachts"]) if pd.notna(row["nachts"]) else "",
+                    "Kommentar": str(row["kommentar"]) if pd.notna(row["kommentar"]) else ""
+                }
+                nem_prescriptions.append(prescription)
+        
+        # Create tables if they don't exist
+        cursor = conn.cursor()
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS patient_therapieplan (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER UNIQUE,
+            data TEXT,
+            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
+        )
+        """)
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS patient_ernaehrung (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER UNIQUE,
+            data TEXT,
+            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
+        )
+        """)
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS patient_infusion (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER UNIQUE,
+            data TEXT,
+            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
+        )
+        """)
+        conn.commit()
         
         # Load other tab data
         therapieplan_sql = "SELECT data FROM patient_therapieplan WHERE patient_id = ?"
@@ -260,16 +269,12 @@ def load_patient_data(conn, patient_name):
         infusion_df = pd.read_sql(infusion_sql, conn, params=(patient_id,))
         infusion_data = eval(infusion_df.iloc[0]["data"]) if not infusion_df.empty else {}
         
-        # Ensure consistent key naming
-        if "patient_name" in patient_data:
-            patient_data["patient"] = patient_data["patient_name"]
-        
         return patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data
     except Exception as e:
         st.error(f"Fehler beim Laden: {str(e)}")
-        return None, {}, {}, {}, {}
+        return None, [], {}, {}, {}
 
-# --- CSS ---
+# Replace the existing CSS with this updated version:
 st.markdown("""
 <style>
 .header-container {
@@ -291,6 +296,7 @@ st.markdown("""
     flex: 1;
     text-align: right;
 }
+/* Success message styling */
 .success-message {
     background-color: #d4edda;
     color: #155724;
@@ -299,52 +305,149 @@ st.markdown("""
     border: 1px solid #c3e6cb;
     margin: 10px 0;
 }
+
+/* Main color theme - Replace red with RGB(38, 96, 65) */
 .stButton > button {
     background-color: rgb(38, 96, 65) !important;
     color: white !important;
     border: 1px solid rgb(30, 76, 52) !important;
 }
+
 .stButton > button:hover {
     background-color: rgb(30, 76, 52) !important;
     border-color: rgb(25, 63, 43) !important;
+    color: white !important;
 }
+
+/* Primary button styling */
 .stButton > button[kind="primary"] {
     background-color: rgb(38, 96, 65) !important;
+    color: white !important;
 }
+
 .stButton > button[kind="primary"]:hover {
     background-color: rgb(30, 76, 52) !important;
 }
+
+/* Secondary button styling */
 .stButton > button[kind="secondary"] {
     background-color: rgb(240, 242, 246) !important;
     color: rgb(38, 96, 65) !important;
     border: 1px solid rgb(38, 96, 65) !important;
 }
+
 .stButton > button[kind="secondary"]:hover {
     background-color: rgb(230, 232, 236) !important;
     color: rgb(30, 76, 52) !important;
+    border-color: rgb(30, 76, 52) !important;
 }
+
+/* Delete confirmation buttons */
 .stButton > button[key="confirm_delete"] {
     background-color: rgb(220, 53, 69) !important;
     color: white !important;
+    border: 1px solid rgb(200, 35, 51) !important;
 }
+
 .stButton > button[key="confirm_delete"]:hover {
     background-color: rgb(200, 35, 51) !important;
 }
+
+/* Tabs styling */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 24px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    height: 50px;
+    white-space: pre-wrap;
+    background-color: #f0f2f6;
+    border-radius: 4px 4px 0px 0px;
+    gap: 1px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    color: rgb(38, 96, 65);
+}
+
 .stTabs [aria-selected="true"] {
+    background-color: rgb(38, 96, 65) !important;
+    color: white !important;
+}
+
+/* Checkbox styling */
+[data-testid="stCheckbox"] span {
+    color: rgb(38, 96, 65) !important;
+}
+
+/* Radio button styling */
+[data-testid="stRadio"] span {
+    color: rgb(38, 96, 65) !important;
+}
+
+/* Selectbox/Multiselect styling */
+[data-testid="stSelectbox"] span, 
+[data-testid="stMultiSelect"] span {
+    color: rgb(38, 96, 65) !important;
+}
+
+/* Text input/textarea focus */
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {
+    border-color: rgb(38, 96, 65) !important;
+    box-shadow: 0 0 0 0.2rem rgba(38, 96, 65, 0.25) !important;
+}
+
+/* Number input focus */
+.stNumberInput > div > div > input:focus {
+    border-color: rgb(38, 96, 65) !important;
+    box-shadow: 0 0 0 0.2rem rgba(38, 96, 65, 0.25) !important;
+}
+
+/* Date input focus */
+[data-testid="stDateInput"] > div > div > input:focus {
+    border-color: rgb(38, 96, 65) !important;
+    box-shadow: 0 0 0 0.2rem rgba(38, 96, 65, 0.25) !important;
+}
+
+/* Error messages */
+.stAlert.st-emotion-cache-1wrcr25 {
+    border-left-color: rgb(38, 96, 65) !important;
+}
+
+/* Warning messages */
+.stAlert.st-emotion-cache-1wrcr25.eeusbqq4 {
+    border-left-color: rgb(255, 193, 7) !important;
+}
+
+/* Success messages */
+.stAlert.st-emotion-cache-1wrcr25.e1f1d6gn3 {
+    border-left-color: rgb(25, 135, 84) !important;
+}
+
+/* PDF header color */
+.pdf-header {
     background-color: rgb(38, 96, 65) !important;
     color: white !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Header ---
+# Header with three columns
 col1, col2, col3 = st.columns([1.2, 3, 0.7])
+
 with col1:
+    st.markdown('<div class="header-logo">', unsafe_allow_html=True)
     if os.path.exists("clinic_logo.png"):
         st.image("clinic_logo.png", width=200)
+    st.markdown('</div>', unsafe_allow_html=True)
+
 with col2:
+    st.markdown('<div class="header-title">', unsafe_allow_html=True)
     st.markdown("<h1 style='text-align: center; margin: 0;'>THERAPIEKONZEPT</h1>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
 with col3:
+    st.markdown('<div class="header-address">', unsafe_allow_html=True)
     st.markdown("""
     <div style="font-size:14px; line-height:1.4;">
     Clausewitzstr. 2<br>
@@ -354,10 +457,11 @@ with col3:
     www.revitaclinic.de
     </div>
     """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# --- Default Darreichungsformen ---
+# --- Default Darreichungsformen for known supplements ---
 DEFAULT_FORMS = {
     "Magnesiumbisglycinat": "Pulver",
     "Magnesiumthreonat": "Pulver",
@@ -382,217 +486,222 @@ DEFAULT_FORMS = {
     "Prolin": "Pulver"
 }
 
-# --- Patient Inputs ---
 def patient_inputs(conn):
+    from datetime import date
+    import streamlit as st
+
+    # --------------------------------------------------
+    # Get patient names
+    # --------------------------------------------------
     patient_names_df = fetch_patient_names(conn)
-    patient_names = patient_names_df['patient_name'].tolist() if not patient_names_df.empty else []
-    
-    # Initialize session state
-    if 'patient_data' not in st.session_state:
-        st.session_state.patient_data = {}
-    if 'nem_prescriptions' not in st.session_state:
-        st.session_state.nem_prescriptions = []
-    if 'therapieplan_data' not in st.session_state:
-        st.session_state.therapieplan_data = {}
-    if 'ernaehrung_data' not in st.session_state:
-        st.session_state.ernaehrung_data = {}
-    if 'infusion_data' not in st.session_state:
-        st.session_state.infusion_data = {}
-    if 'last_loaded_patient' not in st.session_state:
-        st.session_state.last_loaded_patient = None
-    if 'just_loaded_patient' not in st.session_state:
-        st.session_state.just_loaded_patient = False
-    if 'refresh_patient_list' not in st.session_state:
-        st.session_state.refresh_patient_list = False
-    if 'patient_exists_in_db' not in st.session_state:
-        st.session_state.patient_exists_in_db = False
+    patient_names = patient_names_df["patient_name"].tolist() if not patient_names_df.empty else []
 
-    # Refresh patient list if needed
-    if st.session_state.get("refresh_patient_list", False):
-        patient_names_df = fetch_patient_names(conn)
-        patient_names = patient_names_df['patient_name'].tolist() if not patient_names_df.empty else []
-        st.session_state.refresh_patient_list = False
-    
-    # Patient name input
-    # Get the current patient name from session state or empty
-    current_patient_name = st.session_state.patient_data.get("patient", "") or st.session_state.patient_data.get("patient_name", "")
-    
-    # Create a container for the text input to control its behavior
-    patient_input_container = st.container()
-    
-    with patient_input_container:
-        # Use a unique key for the text input to prevent conflicts
-        typed = st.text_input(
-            "Geben Sie den Namen ein und drücken Sie die Eingabetaste, um Vorschläge zu suchen.",
-            value=current_patient_name,
-            placeholder="Vor- und Nachname",
-            key="patient_name_input_main"
-        )
-    
-    # Update session state with current typed value
-    patient_name_input = typed
-    
-    # Check if patient exists in database
-    patient_exists = patient_name_input and patient_name_input in patient_names
-    st.session_state.patient_exists_in_db = patient_exists
+    # --------------------------------------------------
+    # Session state initialization
+    # --------------------------------------------------
+    defaults = {
+        "patient_data": {},
+        "nem_prescriptions": [],
+        "therapieplan_data": {},
+        "ernaehrung_data": {},
+        "infusion_data": {},
+        "last_loaded_patient": None,
+        "just_loaded_patient": False,
+        "current_patient_input": "",
+        "clicked_suggestion": None,
+        "display_patient_name": "",
+    }
 
-    # Suggestions
-    suggestions = [name for name in patient_names if typed and typed.lower() in name.lower()]
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
-    if typed and suggestions:
-        st.write("**Vorschläge:**")
-        for name in suggestions[:7]:
-            if st.button(f"{name}", key=f"suggest_{name}"):
-                result = load_patient_data(conn, name)
-                if result[0]:
-                    patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data = result
-                    
-                    # IMPORTANT: Clear NEM widget session state before loading new data
-                    # Get supplements list for clearing keys
-                    conn_temp = get_conn()
-                    df_temp = fetch_supplements(conn_temp)
-                    conn_temp.close()
-                    
-                    for _, row in df_temp.iterrows():
-                        rid = row["id"]
-                        keys_to_clear = [
-                            f"{rid}_dauer", f"{rid}_darreichungsform", f"{rid}_dosierung",
-                            f"{rid}_Nuechtern", f"{rid}_Morgens", f"{rid}_Mittags",
-                            f"{rid}_Abends", f"{rid}_Nachts", f"{rid}_comment",
-                            f"{rid}_custom_dosage", f"dauer_override_{rid}"
-                        ]
-                        for key in keys_to_clear:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                    
-                    st.session_state.patient_data = patient_data
-                    st.session_state.nem_prescriptions = nem_prescriptions
-                    st.session_state.therapieplan_data = therapieplan_data
-                    st.session_state.ernaehrung_data = ernaehrung_data
-                    st.session_state.infusion_data = infusion_data
-                    st.session_state.last_loaded_patient = name
-                    st.session_state.just_loaded_patient = True
-                    st.session_state.patient_exists_in_db = True
-                    st.rerun()
+    # --------------------------------------------------
+    # Header
+    # --------------------------------------------------
+    st.markdown("#### Patientendaten")
 
-    # Auto-load if exact match
-    if (patient_name_input and 
-        patient_name_input in patient_names and
-        patient_name_input != st.session_state.get("last_loaded_patient") and
-        not st.session_state.get("just_loaded_patient", False)):
-        result = load_patient_data(conn, patient_name_input)
+    # --------------------------------------------------
+    # Handle suggestion click BEFORE text_input
+    # --------------------------------------------------
+    if st.session_state.clicked_suggestion:
+        name = st.session_state.clicked_suggestion
+
+        result = load_patient_data(conn, name)
         if result[0]:
             patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data = result
-            
-            # IMPORTANT: Clear NEM widget session state before loading new data
-            conn_temp = get_conn()
-            df_temp = fetch_supplements(conn_temp)
-            conn_temp.close()
-            
-            for _, row in df_temp.iterrows():
-                rid = row["id"]
-                keys_to_clear = [
-                    f"{rid}_dauer", f"{rid}_darreichungsform", f"{rid}_dosierung",
-                    f"{rid}_Nuechtern", f"{rid}_Morgens", f"{rid}_Mittags",
-                    f"{rid}_Abends", f"{rid}_Nachts", f"{rid}_comment",
-                    f"{rid}_custom_dosage", f"dauer_override_{rid}"
-                ]
-                for key in keys_to_clear:
-                    if key in st.session_state:
-                        del st.session_state[key]
-            
+
             st.session_state.patient_data = patient_data
             st.session_state.nem_prescriptions = nem_prescriptions
             st.session_state.therapieplan_data = therapieplan_data
             st.session_state.ernaehrung_data = ernaehrung_data
             st.session_state.infusion_data = infusion_data
-            st.session_state.last_loaded_patient = patient_name_input
+
+            st.session_state.last_loaded_patient = name
+            st.session_state.display_patient_name = name
             st.session_state.just_loaded_patient = True
-            st.session_state.patient_exists_in_db = True
+
+        st.session_state.clicked_suggestion = None
+        st.rerun()
+
+    # --------------------------------------------------
+    # Determine text_input value
+    # --------------------------------------------------
+    display_value = (
+        st.session_state.display_patient_name
+        if st.session_state.display_patient_name
+        else st.session_state.patient_data.get("patient", "")
+    )
+
+    typed = st.text_input(
+        "Geben Sie den Namen ein und drücken Sie die Eingabetaste, um Vorschläge zu suchen.",
+        value=display_value,
+        placeholder="Vor- und Nachname",
+    )
+
+    # --------------------------------------------------
+    # Track typing
+    # --------------------------------------------------
+    if typed != st.session_state.current_patient_input:
+        st.session_state.current_patient_input = typed
+
+        # User starts typing a NEW patient → clear old data
+        if (
+            st.session_state.last_loaded_patient
+            and typed
+            and typed not in patient_names
+        ):
+            st.session_state.patient_data = {}
+            st.session_state.nem_prescriptions = []
+            st.session_state.therapieplan_data = {}
+            st.session_state.ernaehrung_data = {}
+            st.session_state.infusion_data = {}
+            st.session_state.last_loaded_patient = None
+            st.session_state.display_patient_name = ""
+            st.session_state.just_loaded_patient = False
             st.rerun()
-    
-    if st.session_state.get("just_loaded_patient", False):
+
+    st.session_state.display_patient_name = typed
+
+    # --------------------------------------------------
+    # Suggestions (ONLY if not just loaded)
+    # --------------------------------------------------
+    suggestions = [n for n in patient_names if typed and typed.lower() in n.lower()]
+
+    if typed and suggestions and not st.session_state.just_loaded_patient:
+        st.write("**Vorschläge:**")
+        for name in suggestions[:7]:
+            if st.button(name, key=f"suggest_{name}"):
+                st.session_state.clicked_suggestion = name
+                st.rerun()
+
+    # --------------------------------------------------
+    # Auto-load on Enter (exact match)
+    # --------------------------------------------------
+    patient_name_input = typed
+
+    if (
+        patient_name_input
+        and patient_name_input in patient_names
+        and patient_name_input != st.session_state.last_loaded_patient
+        and not st.session_state.just_loaded_patient
+    ):
+        result = load_patient_data(conn, patient_name_input)
+        if result[0]:
+            patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data = result
+
+            st.session_state.patient_data = patient_data
+            st.session_state.nem_prescriptions = nem_prescriptions
+            st.session_state.therapieplan_data = therapieplan_data
+            st.session_state.ernaehrung_data = ernaehrung_data
+            st.session_state.infusion_data = infusion_data
+
+            st.session_state.last_loaded_patient = patient_name_input
+            st.session_state.display_patient_name = patient_name_input
+            st.session_state.just_loaded_patient = True
+            st.rerun()
+
+    # Reset flag AFTER UI is stable
+    if st.session_state.just_loaded_patient:
         st.session_state.just_loaded_patient = False
 
-    # Patient details
-    c1, c2, c3, c4, c5, c6, c7 = st.columns([1, 1, 1, 1, 1, 1, 1])
+    # --------------------------------------------------
+    # Defaults
+    # --------------------------------------------------
+    pdata = st.session_state.patient_data or {}
+
+    default_geburtsdatum = pdata.get("geburtsdatum", date.today())
+    default_geschlecht = pdata.get("geschlecht", "M")
+    default_groesse = int(pdata.get("groesse", 0))
+    default_gewicht = int(pdata.get("gewicht", 0))
+    default_therapiebeginn = pdata.get("therapiebeginn", date.today())
+    default_dauer_value = pdata.get("dauer", 6)
+    default_tw_besprochen = pdata.get("tw_besprochen", "Ja")
+    default_allergie = pdata.get("allergie", "")
+    default_diagnosen = pdata.get("diagnosen", "")
+
+    # --------------------------------------------------
+    # Layout
+    # --------------------------------------------------
+    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
 
     with c1:
         geburtsdatum = st.date_input(
-        "Geburtsdatum",
-        format="DD.MM.YYYY",
-        value=st.session_state.patient_data.get("geburtsdatum", date.today()),
-        min_value=date(1960, 1, 1),  # Starting from 1960
-        max_value=date.today()       # Today as maximum
+            "Geburtsdatum",
+            value=default_geburtsdatum,
+            min_value=date(1900, 1, 1),
+            max_value=date.today(),
+            format="DD.MM.YYYY",
         )
 
     with c2:
-        geschlecht_options = ["M", "W"]
-        geschlecht_default = st.session_state.patient_data.get("geschlecht", "M")
         geschlecht = st.radio(
-            "Geschlecht",
-            geschlecht_options,
-            horizontal=True,
-            index=geschlecht_options.index(geschlecht_default)
-            if geschlecht_default in geschlecht_options else 0
+            "Geschlecht", ["M", "W"], horizontal=True,
+            index=0 if default_geschlecht == "M" else 1
         )
 
     with c3:
-        groesse = st.number_input(
-            "Grösse (cm)",
-            min_value=0,
-            step=1,
-            value=int(st.session_state.patient_data.get("groesse", 0))
-        )
+        groesse = st.number_input("Grösse (cm)", min_value=0, value=default_groesse)
 
     with c4:
-        gewicht = st.number_input(
-            "Gewicht (kg)",
-            min_value=0,
-            step=1,
-            value=int(st.session_state.patient_data.get("gewicht", 0))
-        )
+        gewicht = st.number_input("Gewicht (kg)", min_value=0, value=default_gewicht)
 
     with c5:
         therapiebeginn = st.date_input(
             "Therapiebeginn",
+            value=default_therapiebeginn,
             format="DD.MM.YYYY",
-            value=st.session_state.patient_data.get("therapiebeginn", date.today())
         )
 
     with c6:
-        dauer_value = st.session_state.patient_data.get("dauer", 6)
         dauer = st.selectbox(
             "Dauer (Monate)",
-            options=list(range(1, 13)),
-            index=dauer_value - 1 if isinstance(dauer_value, int) and 1 <= dauer_value <= 12 else 5
+            list(range(1, 13)),
+            index=default_dauer_value - 1,
         )
 
     with c7:
-        tw_options = ["Ja", "Nein"]
-        tw_default = st.session_state.patient_data.get("tw_besprochen", "Ja")
         tw_besprochen = st.radio(
             "TW besprochen?",
-            tw_options,
+            ["Ja", "Nein"],
             horizontal=True,
-            index=tw_options.index(tw_default) if tw_default in tw_options else 0
+            index=0 if default_tw_besprochen == "Ja" else 1,
         )
 
-    # Allergie & Diagnosen
-    bekannte_allergie = st.text_input(
-        "Bekannte Allergie?",
-        value=st.session_state.patient_data.get("allergie", "")
-    )
+    bekannte_allergie = st.text_input("Bekannte Allergie?", value=default_allergie)
 
     diagnosen = st.text_area(
         "Diagnosen",
-        placeholder="Relevante Diagnosen...",
+        value=default_diagnosen,
         height=100,
-        value=st.session_state.patient_data.get("diagnosen", "")
+        placeholder="Relevante Diagnosen...",
     )
 
+    # --------------------------------------------------
+    # RETURN (UNCHANGED)
+    # --------------------------------------------------
     data = {
-        "patient": patient_name_input or st.session_state.patient_data.get("patient", "") or st.session_state.patient_data.get("patient_name", ""),
+        "patient": patient_name_input,
         "geburtsdatum": geburtsdatum,
         "geschlecht": geschlecht,
         "groesse": groesse,
@@ -606,7 +715,11 @@ def patient_inputs(conn):
 
     return data
 
-# --- PDF Helpers ---
+
+
+
+
+# --- Helpers ---
 def _fmt_dt(d):
     try:
         return d.strftime("%d.%m.%Y")
@@ -620,6 +733,12 @@ class PDF(FPDF):
                 self.image("clinic_logo.png", 10, 8, 40)
             except:
                 pass
+        
+        # Add title between logo and address
+        self.set_font("Helvetica", "B", 16)
+        self.set_xy(100, 13)
+        self.cell(100, 10, "THERAPIEKONZEPT - NEM", 0, 0, "C")
+        
         self.set_font("Helvetica", "", 10)
         self.set_xy(230, 10)
         self.multi_cell(60, 5,
@@ -628,28 +747,33 @@ class PDF(FPDF):
         )
         self.ln(12)
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font("Helvetica", "", 9)
-        self.set_text_color(100)
-        self.cell(0, 10, "www.revitaclinic.de", 0, 0, "C")
 
 def generate_pdf(patient, supplements, tab_name="NEM"):
     pdf = PDF("L", "mm", "A4")
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
 
-    # Title
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 8, f"THERAPIEKONZEPT - {tab_name.upper()}", 0, 1, "L")
-    pdf.ln(3)
+    # Helper function to clean text
+    def clean_text(text):
+        if not text:
+            return ""
+        # Replace en dash and em dash with regular dash
+        text = str(text)
+        text = text.replace('–', '-')  # en dash
+        text = text.replace('—', '-')  # em dash
+        text = text.replace('−', '-')  # minus sign
+        # Remove or replace other unsupported characters
+        # Add more replacements as needed
+        return text
 
-    # Patient info
+    # REMOVE the duplicate title here since it's now in the header
+    # Patient info starts directly
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(35, 6, "Vor- und Nachname:", 0, 0)
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, patient.get("patient", ""), 0, 1)
+    pdf.cell(0, 6, clean_text(patient.get("patient", "")), 0, 1)  # Clean the text
     pdf.ln(2)
+
 
     col_w = [38, 38, 30, 30, 42, 28, 35, 70]
     
@@ -722,18 +846,19 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Helvetica", "", 9)
 
+        # Update the supplement rows to use clean_text
         for s in supplements:
             row = [
-                s.get("name", ""),
-                s.get("Dauer", ""),
-                s.get("Darreichungsform", ""),
-                s.get("Dosierung", ""), 
-                s.get("Nüchtern", ""),
-                s.get("Morgens", ""),
-                s.get("Mittags", ""),
-                s.get("Abends", ""),
-                s.get("Nachts", ""),
-                s.get("Kommentar", "")
+                clean_text(s.get("name", "")),  # Clean each field
+                clean_text(s.get("Dauer", "")),
+                clean_text(s.get("Darreichungsform", "")),
+                clean_text(s.get("Dosierung", "")), 
+                clean_text(s.get("Nüchtern", "")),
+                clean_text(s.get("Morgens", "")),
+                clean_text(s.get("Mittags", "")),
+                clean_text(s.get("Abends", "")),
+                clean_text(s.get("Nachts", "")),
+                clean_text(s.get("Kommentar", ""))
             ]
 
             comment_text = row[-1] or ""
@@ -773,7 +898,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
 
     return bytes(pdf.output(dest="S"))
 
-# --- Main App ---
+# --- Main app ---
 def main():
     conn = get_conn()
     df = fetch_supplements(conn)
@@ -781,45 +906,43 @@ def main():
     # --- Patient Info ---
     patient = patient_inputs(conn)
 
-    # Initialize override keys
+    # Initialize override keys for each supplement in session_state
     for _, row in df.iterrows():
         override_key = f"dauer_override_{row['id']}"
         if override_key not in st.session_state:
             st.session_state[override_key] = None
 
-    # Initialize session states
+    # Initialize session state for delete confirmation
     if 'show_delete_confirmation' not in st.session_state:
         st.session_state.show_delete_confirmation = False
+    
+    # Initialize session state for save success message
     if 'show_save_success' not in st.session_state:
         st.session_state.show_save_success = False
+    
+    # Initialize session state for PDF generation
     if 'nem_pdf_bytes' not in st.session_state:
         st.session_state.nem_pdf_bytes = None
-
-    # Get patient names for delete button check
-    patient_names = fetch_patient_names(conn)['patient_name'].tolist()
     
+    # Initialize session state for auto-download
+    if 'auto_download_pdf' not in st.session_state:
+        st.session_state.auto_download_pdf = None
+
     # Save and Delete buttons at the top
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
         save_button = st.button("Alle Daten speichern", use_container_width=True, type="primary")
     with col2:
-        # Delete button - ONLY show if patient exists in database
-        # Check both session state and current patient
-        patient_exists_in_db = st.session_state.get("patient_exists_in_db", False)
-        patient_exists = patient["patient"] and patient["patient"] in patient_names
-        
-        # Show delete button only if patient exists in database
-        if patient_exists or patient_exists_in_db:
+        # Delete button - only show if patient exists in database
+        patient_names = fetch_patient_names(conn)['patient_name'].tolist()
+        if patient["patient"] and patient["patient"] in patient_names:
             if st.button("Patient löschen", use_container_width=True, type="secondary"):
                 st.session_state.show_delete_confirmation = True
-        else:
-            # Show disabled button with tooltip
-            st.button("Patient löschen", use_container_width=True, type="secondary", disabled=True, 
-                     help="Patient muss gespeichert sein, um löschen zu können")
     
     # Show save success message if set
     if st.session_state.get("show_save_success", False):
         st.markdown('<div class="success-message">Alle Daten wurden erfolgreich gespeichert!</div>', unsafe_allow_html=True)
+        # Clear the message after 3 seconds
         time.sleep(3)
         st.session_state.show_save_success = False
         st.rerun()
@@ -843,8 +966,6 @@ def main():
                     st.session_state.infusion_data = {}
                     st.session_state.last_loaded_patient = None
                     st.session_state.show_delete_confirmation = False
-                    st.session_state.patient_exists_in_db = False
-                    st.session_state.refresh_patient_list = True
                     time.sleep(2)
                     st.rerun()
                 else:
@@ -864,16 +985,25 @@ def main():
         "Infusionstherapie"
     ])
 
-    # CRITICAL FIX: Initialize nem_prescriptions as a session state variable that we'll update
-    if 'current_nem_prescriptions' not in st.session_state:
-        st.session_state.current_nem_prescriptions = st.session_state.nem_prescriptions.copy()
+    # Initialize selected list for NEM prescriptions
+    selected = []
+    therapieplan_data = {}
+    ernaehrung_data = {}
+    infusion_data = {}
 
-    # TAB 1: NEM - CRITICAL FIX: Form data collection
+    # TAB 1: NEM
+    # TAB 1: NEM
+# TAB 1: NEM
     with tabs[0]:
-        # Store NEM prescriptions
+        # Store NEM prescriptions in a container
         nem_container = st.container()
         
         with nem_container:
+            # Initialize form data
+            if 'nem_form_initialized' not in st.session_state:
+                st.session_state.nem_form_initialized = True
+            
+            # Use a form for better data handling
             with st.form("nem_form", clear_on_submit=False):
                 if "last_main_dauer" not in st.session_state:
                     st.session_state.last_main_dauer = patient["dauer"]
@@ -911,6 +1041,14 @@ def main():
                         text-align: left !important;
                         margin-bottom: 0px !important;
                     }
+                    /* Add this for the new color theme */
+                    .stButton > button {
+                        background-color: rgb(38, 96, 65) !important;
+                        color: white !important;
+                    }
+                    .stButton > button:hover {
+                        background-color: rgb(30, 76, 52) !important;
+                    }
                     </style>
                 """, unsafe_allow_html=True)
 
@@ -924,123 +1062,104 @@ def main():
 
                 st.markdown("---")
 
-                # Reset form_selected list for this form submission
-                form_selected = []
-
+                # Create lists for different purposes
+                all_supplements_data = []  # For saving - includes ALL supplements
+                
                 # Each supplement row
                 for _, row in df.iterrows():
                     cols = st.columns([2.2, 0.7, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
 
                     # Supplement name
-                    cols[0].markdown(row["name"])
+                    supplement_name = row["name"]
+                    cols[0].markdown(supplement_name)
 
                     override_key = f"dauer_override_{row['id']}"
 
                     # Check if we have loaded prescriptions for this supplement
                     loaded_prescription = None
-                    for prescription in st.session_state.nem_prescriptions:
-                        if prescription["name"] == row["name"]:
-                            loaded_prescription = prescription
-                            break
+                    if st.session_state.nem_prescriptions:
+                        for prescription in st.session_state.nem_prescriptions:
+                            if prescription.get("name") == supplement_name:
+                                loaded_prescription = prescription
+                                break
 
-                    # Determine initial values - CRITICAL FIX: Check session state first
-                    rid = row["id"]
-                    
-                    # Get values from session state or loaded prescription
+                    # Determine initial values
                     if loaded_prescription:
-                        initial_dauer = int(loaded_prescription["Dauer"].replace(" M", ""))
-                        initial_form = loaded_prescription["Darreichungsform"]
-                        initial_dosierung = loaded_prescription["Dosierung"]
-                        initial_nue = loaded_prescription["Nüchtern"]
-                        initial_morg = loaded_prescription["Morgens"]
-                        initial_mitt = loaded_prescription["Mittags"]
-                        initial_abend = loaded_prescription["Abends"]
-                        initial_nacht = loaded_prescription["Nachts"]
-                        initial_comment = loaded_prescription["Kommentar"]
-                        
-                        # CRITICAL: Update session state with loaded values
-                        st.session_state[f"{rid}_dauer"] = initial_dauer
-                        st.session_state[f"{rid}_darreichungsform"] = initial_form
-                        st.session_state[f"{rid}_dosierung"] = initial_dosierung
-                        st.session_state[f"{rid}_Nuechtern"] = initial_nue
-                        st.session_state[f"{rid}_Morgens"] = initial_morg
-                        st.session_state[f"{rid}_Mittags"] = initial_mitt
-                        st.session_state[f"{rid}_Abends"] = initial_abend
-                        st.session_state[f"{rid}_Nachts"] = initial_nacht
-                        st.session_state[f"{rid}_comment"] = initial_comment
-                        
-                        # Also handle custom dosage if form is not in presets
-                        if initial_form and initial_form not in ["Kapseln", "Lösung", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML", "Andere:"]:
-                            st.session_state[f"{rid}_custom_dosage"] = initial_form
-                            st.session_state[f"{rid}_darreichungsform"] = "Andere:"
+                        initial_dauer = int(loaded_prescription.get("Dauer", "0 M").replace(" M", ""))
+                        initial_form = loaded_prescription.get("Darreichungsform", "")
+                        initial_dosierung = loaded_prescription.get("Dosierung", "")
+                        initial_nue = loaded_prescription.get("Nüchtern", "")
+                        initial_morg = loaded_prescription.get("Morgens", "")
+                        initial_mitt = loaded_prescription.get("Mittags", "")
+                        initial_abend = loaded_prescription.get("Abends", "")
+                        initial_nacht = loaded_prescription.get("Nachts", "")
+                        initial_comment = loaded_prescription.get("Kommentar", "")
                     else:
-                        # Use session state if exists, otherwise defaults
-                        dauer_key = f"{rid}_dauer"
-                        if dauer_key not in st.session_state:
-                            st.session_state[dauer_key] = st.session_state[override_key] if st.session_state[override_key] is not None else patient["dauer"]
-                        
-                        if f"{rid}_darreichungsform" not in st.session_state:
-                            st.session_state[f"{rid}_darreichungsform"] = DEFAULT_FORMS.get(row["name"], "Kapseln")
-                        
-                        # Initialize other keys if not exists
-                        for key_suffix in ["_dosierung", "_Nuechtern", "_Morgens", "_Mittags", "_Abends", "_Nachts", "_comment"]:
-                            key = f"{rid}{key_suffix}"
-                            if key not in st.session_state:
-                                st.session_state[key] = ""
-                        
-                        initial_dauer = st.session_state[dauer_key]
-                        initial_form = st.session_state[f"{rid}_darreichungsform"]
-                        initial_dosierung = st.session_state[f"{rid}_dosierung"]
-                        initial_nue = st.session_state[f"{rid}_Nuechtern"]
-                        initial_morg = st.session_state[f"{rid}_Morgens"]
-                        initial_mitt = st.session_state[f"{rid}_Mittags"]
-                        initial_abend = st.session_state[f"{rid}_Abends"]
-                        initial_nacht = st.session_state[f"{rid}_Nachts"]
-                        initial_comment = st.session_state[f"{rid}_comment"]
+                        initial_dauer = st.session_state[override_key] if st.session_state[override_key] is not None else patient["dauer"]
+                        initial_form = DEFAULT_FORMS.get(supplement_name, "Kapseln")
+                        initial_dosierung = ""
+                        initial_nue = ""
+                        initial_morg = ""
+                        initial_mitt = ""
+                        initial_abend = ""
+                        initial_nacht = ""
+                        initial_comment = ""
 
-                    # Dauer input - use session state value
+                    # Create unique keys for each widget
+                    dauer_key = f"{row['id']}_dauer"
+                    form_key = f"{row['id']}_darreichungsform"
+                    dosage_key = f"{row['id']}_dosierung"
+                    custom_form_key = f"{row['id']}_custom_dosage"
+                    nue_key = f"{row['id']}_Nuechtern"
+                    morg_key = f"{row['id']}_Morgens"
+                    mitt_key = f"{row['id']}_Mittags"
+                    abend_key = f"{row['id']}_Abends"
+                    nacht_key = f"{row['id']}_Nachts"
+                    comment_key = f"{row['id']}_comment"
+
+                    # Dauer input
                     dauer_input = cols[1].number_input(
-                        "", key=f"{rid}_dauer", min_value=1, max_value=12, 
+                        "", key=dauer_key, min_value=1, max_value=12, 
                         value=int(initial_dauer),
                         label_visibility="collapsed"
                     )
 
                     # Darreichungsform dropdown
-                    dosage_presets = ["Kapseln","Lösung", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML", "Andere:"]
+                    dosage_presets = ["Kapseln", "Lösung", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML", "Andere:"]
                     
-                    # Find index for initial form
+                    default_form_for_supplement = DEFAULT_FORMS.get(supplement_name, "Kapseln")
                     form_index = 0
-                    current_form = st.session_state.get(f"{rid}_darreichungsform", initial_form)
-                    if current_form in dosage_presets:
-                        form_index = dosage_presets.index(current_form)
-                    elif current_form:
-                        form_index = dosage_presets.index("Andere:")
+                    if initial_form:
+                        if initial_form in dosage_presets:
+                            form_index = dosage_presets.index(initial_form)
+                        elif initial_form.strip():
+                            form_index = dosage_presets.index("Andere:")
+                    else:
+                        if default_form_for_supplement in dosage_presets:
+                            form_index = dosage_presets.index(default_form_for_supplement)
                     
                     selected_form = cols[2].selectbox(
                         "", dosage_presets, index=form_index,
-                        key=f"{rid}_darreichungsform", label_visibility="collapsed"
+                        key=form_key, label_visibility="collapsed"
                     )
 
                     # Dosierung dropdown
                     dosierung_options = ["", "100mg", "200mg", "300mg", "400mg", "500mg"]
-                    current_dosierung = st.session_state.get(f"{rid}_dosierung", initial_dosierung)
-                    dosierung_index = dosierung_options.index(current_dosierung) if current_dosierung in dosierung_options else 0
+                    dosierung_index = 0
+                    if initial_dosierung in dosierung_options:
+                        dosierung_index = dosierung_options.index(initial_dosierung)
                     
                     dosierung_val = cols[3].selectbox(
                         "", dosierung_options, index=dosierung_index,
-                        key=f"{rid}_dosierung", label_visibility="collapsed"
+                        key=dosage_key, label_visibility="collapsed"
                     )
 
                     # Custom dosage text input
                     custom_form = ""
                     if selected_form == "Andere:":
-                        custom_key = f"{rid}_custom_dosage"
-                        custom_form_value = st.session_state.get(custom_key, "")
-                        if initial_form and initial_form not in dosage_presets and not custom_form_value:
-                            custom_form_value = initial_form
-                        
+                        custom_form_value = initial_form if initial_form and initial_form not in dosage_presets else ""
                         custom_form = cols[2].text_input(
-                            " ", key=custom_key, placeholder="z. B. Pulver",
+                            "", key=custom_form_key, placeholder="z. B. Pulver",
                             value=custom_form_value,
                             label_visibility="collapsed"
                         )
@@ -1054,93 +1173,109 @@ def main():
                     # Intake dropdowns
                     dose_options = ["", "1", "2", "3", "4", "5"]
                     
-                    # Get current values from session state
-                    nue_current = st.session_state.get(f"{rid}_Nuechtern", initial_nue)
-                    morg_current = st.session_state.get(f"{rid}_Morgens", initial_morg)
-                    mitt_current = st.session_state.get(f"{rid}_Mittags", initial_mitt)
-                    abend_current = st.session_state.get(f"{rid}_Abends", initial_abend)
-                    nacht_current = st.session_state.get(f"{rid}_Nachts", initial_nacht)
-                    
-                    nue_index = dose_options.index(nue_current) if nue_current in dose_options else 0
-                    morg_index = dose_options.index(morg_current) if morg_current in dose_options else 0
-                    mitt_index = dose_options.index(mitt_current) if mitt_current in dose_options else 0
-                    abend_index = dose_options.index(abend_current) if abend_current in dose_options else 0
-                    nacht_index = dose_options.index(nacht_current) if nacht_current in dose_options else 0
-                    
                     nue_val = cols[4].selectbox("", dose_options, 
-                                            index=nue_index,
-                                            key=f"{rid}_Nuechtern", label_visibility="collapsed")
+                                            index=dose_options.index(initial_nue) if initial_nue in dose_options else 0,
+                                            key=nue_key, label_visibility="collapsed")
                     morg_val = cols[5].selectbox("", dose_options,
-                                            index=morg_index,
-                                            key=f"{rid}_Morgens", label_visibility="collapsed")
+                                            index=dose_options.index(initial_morg) if initial_morg in dose_options else 0,
+                                            key=morg_key, label_visibility="collapsed")
                     mitt_val = cols[6].selectbox("", dose_options,
-                                            index=mitt_index,
-                                            key=f"{rid}_Mittags", label_visibility="collapsed")
+                                            index=dose_options.index(initial_mitt) if initial_mitt in dose_options else 0,
+                                            key=mitt_key, label_visibility="collapsed")
                     abend_val = cols[7].selectbox("", dose_options,
-                                                index=abend_index,
-                                                key=f"{rid}_Abends", label_visibility="collapsed")
+                                                index=dose_options.index(initial_abend) if initial_abend in dose_options else 0,
+                                                key=abend_key, label_visibility="collapsed")
                     nacht_val = cols[8].selectbox("", dose_options,
-                                                index=nacht_index,
-                                                key=f"{rid}_Nachts", label_visibility="collapsed")
+                                                index=dose_options.index(initial_nacht) if initial_nacht in dose_options else 0,
+                                                key=nacht_key, label_visibility="collapsed")
 
                     # Kommentar field
-                    current_comment = st.session_state.get(f"{rid}_comment", initial_comment)
                     comment = cols[9].text_input(
-                        "", key=f"{rid}_comment", placeholder="Kommentar",
-                        value=current_comment or "", label_visibility="collapsed"
+                        "", key=comment_key, placeholder="Kommentar",
+                        value=initial_comment or "", label_visibility="collapsed"
                     )
+
+                    # Get the final form value
+                    final_form = custom_form if custom_form else selected_form
+                    if final_form == "Andere:":
+                        final_form = ""
                     
-                    # Decide whether this supplement should be saved
-                    has_intake = any([nue_val, morg_val, mitt_val, abend_val, nacht_val])
-                    has_other_data = any([
-                        dosierung_val,
-                        selected_form and selected_form != "",
-                        comment and comment.strip()
-                    ])
+                    # Create prescription data for this supplement
+                    prescription_data = {
+                        "name": supplement_name,
+                        "Dauer": f"{dauer_input} M",
+                        "Darreichungsform": final_form,
+                        "Dosierung": dosierung_val,
+                        "Nüchtern": nue_val,
+                        "Morgens": morg_val,
+                        "Mittags": mitt_val,
+                        "Abends": abend_val,
+                        "Nachts": nacht_val,
+                        "Kommentar": comment
+                    }
+                    
+                    # ALWAYS add to all_supplements_data for saving
+                    all_supplements_data.append(prescription_data)
 
-                    if has_intake or has_other_data:
-                        final_form = custom_form if custom_form else selected_form
-                        if final_form == "Andere:" and not custom_form:
-                            final_form = ""
+                # Form submit buttons
+                pdf_submitted = st.form_submit_button("NEM PDF generieren")
 
-                        form_selected.append({
-                            "name": row["name"],
-                            "Dauer": f"{dauer_input} M",
-                            "Darreichungsform": final_form,
-                            "Dosierung": dosierung_val,
-                            "Nüchtern": nue_val,
-                            "Morgens": morg_val,
-                            "Mittags": mitt_val,
-                            "Abends": abend_val,
-                            "Nachts": nacht_val,
-                            "Kommentar": comment
-                        })
-
-                # Form submit button for PDF generation
-                pdf_submitted = st.form_submit_button("📄 NEM PDF generieren")
+            # Handle form submissions OUTSIDE the form context
+            if pdf_submitted:
+                # Update session state with ALL data for saving
+                st.session_state.nem_prescriptions = all_supplements_data
                 
-                # Handle form submission for PDF
-                if pdf_submitted:
-                    if not form_selected:
-                        st.error("Bitte mindestens ein Supplement auswählen!")
-                    else:
-                        # Update session state
-                        st.session_state.nem_prescriptions = form_selected
-                        st.session_state.current_nem_prescriptions = form_selected
-                        
-                        # Generate PDF and store in session state
-                        st.session_state.nem_pdf_bytes = generate_pdf(patient, form_selected, "NEM")
-                        st.success("PDF wurde generiert! Download-Button erscheint unten.")
-        
-        # Show PDF download button outside the form if PDF was generated
-        if st.session_state.get("nem_pdf_bytes"):
-            st.download_button(
-                "NEM PDF herunterladen",
-                data=st.session_state.nem_pdf_bytes,
-                file_name=f"RevitaClinic_NEM_{patient.get('patient','')}.pdf",
-                mime="application/pdf",
-                key="nem_pdf_download"
-            )
+                # Filter supplements for PDF - only include supplements with actual prescription data
+                pdf_supplements_data = []
+                for prescription in all_supplements_data:
+                    # Check if there's any actual prescription data
+                    has_prescription_data = False
+                    
+                    # Check intake times
+                    intake_fields = ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]
+                    for field in intake_fields:
+                        if prescription.get(field, "").strip():
+                            has_prescription_data = True
+                            break
+                    
+                    # If no intake times, check other prescription fields
+                    if not has_prescription_data:
+                        # Check dosage
+                        if prescription.get("Dosierung", "").strip():
+                            has_prescription_data = True
+                        # Check comment
+                        elif prescription.get("Kommentar", "").strip():
+                            has_prescription_data = True
+                        # Check if form is different from default
+                        elif prescription.get("Darreichungsform", "").strip() and prescription["Darreichungsform"] != DEFAULT_FORMS.get(prescription["name"], "Kapseln"):
+                            has_prescription_data = True
+                        # Check if duration was changed from default
+                        elif prescription.get("Dauer", "") != f"{patient['dauer']} M":
+                            has_prescription_data = True
+                    
+                    if has_prescription_data:
+                        pdf_supplements_data.append(prescription)
+                
+                # Only generate PDF if there are actual prescriptions
+                if pdf_supplements_data:
+                    # Generate PDF and trigger auto-download
+                    pdf_bytes = generate_pdf(patient, pdf_supplements_data, "NEM")
+                    filename = f"RevitaClinic_NEM_{patient.get('patient','')}.pdf"
+                    
+                    # Set auto-download in session state
+                    st.session_state.auto_download_pdf = {
+                        "data": pdf_bytes,
+                        "filename": filename,
+                        "mime": "application/pdf"
+                    }
+                    
+                    # Show success message
+                    st.success(f"✅ PDF mit {len(pdf_supplements_data)} NEM-Supplement(en) generiert!")
+                    
+                    # Force rerun to trigger download
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Keine NEM-Supplemente ausgewählt. Bitte mindestens ein Supplement mit Dosierung oder Einnahmezeiten ausfüllen.")
 
     # TAB 2: Therapieplan
     with tabs[1]:
@@ -1240,19 +1375,22 @@ def main():
             "yager": yager,
             "energetisch": energetisch
         }
-        
+
         # Update session state
         st.session_state.therapieplan_data = therapieplan_data
 
         # PDF button
         if st.button("Therapieplan PDF generieren"):
             pdf_bytes = generate_pdf(patient, therapieplan_data, "THERAPIEPLAN")
-            st.download_button(
-                "Therapieplan-PDF herunterladen",
-                data=pdf_bytes,
-                file_name=f"RevitaClinic_Therapieplan_{patient.get('patient','')}.pdf",
-                mime="application/pdf"
-            )
+            filename = f"RevitaClinic_Therapieplan_{patient.get('patient','')}.pdf"
+            
+            # Set auto-download
+            st.session_state.auto_download_pdf = {
+                "data": pdf_bytes,
+                "filename": filename,
+                "mime": "application/pdf"
+            }
+            st.rerun()
 
     # TAB 3: Ernährung
     with tabs[2]:
@@ -1339,19 +1477,22 @@ def main():
             "trampolin": trampolin,
             "barre": barre
         }
-        
+
         # Update session state
         st.session_state.ernaehrung_data = ernaehrung_data
 
         # PDF button
         if st.button("Ernährung & Lifestyle PDF generieren"):
             pdf_bytes = generate_pdf(patient, ernaehrung_data, "ERNÄHRUNG & LIFESTYLE")
-            st.download_button(
-                "Ernährung & Lifestyle PDF herunterladen",
-                data=pdf_bytes,
-                file_name=f"RevitaClinic_Ernaehrung_{patient.get('patient', '')}.pdf",
-                mime="application/pdf"
-            )
+            filename = f"RevitaClinic_Ernaehrung_{patient.get('patient', '')}.pdf"
+            
+            # Set auto-download
+            st.session_state.auto_download_pdf = {
+                "data": pdf_bytes,
+                "filename": filename,
+                "mime": "application/pdf"
+            }
+            st.rerun()
 
     # TAB 4: Infusion
     with tabs[3]:
@@ -1441,86 +1582,55 @@ def main():
             "vitamin_c": vitamin_c,
             "zusaetze": zusaetze
         }
-        
+
         # Update session state
         st.session_state.infusion_data = infusion_data
 
         # PDF button
         if st.button("Infusionstherapie PDF generieren"):
             pdf_bytes = generate_pdf(patient, infusion_data, "INFUSIONSTHERAPIE")
-            st.download_button(
-                "Infusionstherapie PDF herunterladen",
-                data=pdf_bytes,
-                file_name=f"RevitaClinic_Infusion_{patient.get('patient', '')}.pdf",
-                mime="application/pdf"
-            )
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            filename = f"RevitaClinic_Infusion_{patient.get('patient', '')}_{timestamp}.pdf"
+            
+            # Set auto-download
+            st.session_state.auto_download_pdf = {
+                "data": pdf_bytes,
+                "filename": filename,
+                "mime": "application/pdf"
+            }
+            st.rerun()
 
-    # Handle save button (saves all tabs) - FIXED VERSION
+    # Handle save button (saves all tabs)
     if save_button:
         if not patient["patient"]:
             st.error("Bitte Patientennamen eingeben!")
         else:
-            # Check for duplicate patient name before saving
-            cursor = conn.cursor()
-            cursor.execute("SELECT patient_name FROM patients WHERE patient_name = ?", (patient["patient"],))
-            existing_patient = cursor.fetchone()
+            # Get data from all tabs (already updated in session state)
+            nem_prescriptions = st.session_state.nem_prescriptions
+            therapieplan_data = st.session_state.therapieplan_data
+            ernaehrung_data = st.session_state.ernaehrung_data
+            infusion_data = st.session_state.infusion_data
             
-            # If patient exists and we're not loading an existing patient, show warning
-            if existing_patient and st.session_state.get("last_loaded_patient") != patient["patient"]:
-                st.warning(f"Patient '{patient['patient']}' existiert bereits in der Datenbank!")
-                st.info("Bitte wählen Sie einen anderen Namen oder laden Sie den bestehenden Patienten.")
-            else:
-                # CRITICAL: Collect NEM form data from session state
-                nem_prescriptions_to_save = []
-                
-                # Collect all NEM data from the form widgets
-                for _, row in df.iterrows():
-                    rid = row["id"]
-                    
-                    # Get values from session state (these are set by the form widgets)
-                    dauer = st.session_state.get(f"{rid}_dauer", patient["dauer"])
-                    darreich = st.session_state.get(f"{rid}_darreichungsform", "")
-                    custom = st.session_state.get(f"{rid}_custom_dosage", "")
-                    dosierung = st.session_state.get(f"{rid}_dosierung", "")
-                    
-                    nue = st.session_state.get(f"{rid}_Nuechtern", "")
-                    morg = st.session_state.get(f"{rid}_Morgens", "")
-                    mitt = st.session_state.get(f"{rid}_Mittags", "")
-                    abend = st.session_state.get(f"{rid}_Abends", "")
-                    nacht = st.session_state.get(f"{rid}_Nachts", "")
-                    comment = st.session_state.get(f"{rid}_comment", "")
-                    
-                    # Check if this supplement has any data
-                    has_intake = any([nue, morg, mitt, abend, nacht])
-                    has_other_data = any([dosierung, darreich, comment and comment.strip()])
-                    
-                    if has_intake or has_other_data:
-                        final_form = custom if custom else darreich
-                        if final_form == "Andere:":
-                            final_form = ""  # Handle "Andere:" selection
-                        
-                        nem_prescriptions_to_save.append({
-                            "name": row["name"],
-                            "Dauer": f"{dauer} M",
-                            "Darreichungsform": final_form,
-                            "Dosierung": dosierung,
-                            "Nüchtern": nue,
-                            "Morgens": morg,
-                            "Mittags": mitt,
-                            "Abends": abend,
-                            "Nachts": nacht,
-                            "Kommentar": comment
-                        })
-                
-                # Save all data
-                if save_patient_data(conn, patient, nem_prescriptions_to_save, 
-                                st.session_state.therapieplan_data, 
-                                st.session_state.ernaehrung_data, 
-                                st.session_state.infusion_data):
-                    st.session_state.show_save_success = True
-                    st.session_state.last_loaded_patient = patient["patient"]
-                    st.session_state.patient_exists_in_db = True
-                    st.rerun()
+            # Save all data
+            if save_patient_data(conn, patient, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data):
+                # Set success flag
+                st.session_state.show_save_success = True
+                st.session_state.last_loaded_patient = patient["patient"]
+                st.rerun()
+
+    # Auto-download PDF section (appears at the end if any PDF was generated)
+    if st.session_state.get("auto_download_pdf"):
+        pdf_data = st.session_state.auto_download_pdf
+        # Create a download button that will appear
+        st.download_button(
+            "PDF herunterladen",
+            data=pdf_data["data"],
+            file_name=pdf_data["filename"],
+            mime=pdf_data["mime"],
+            key="auto_download"
+        )
+        # Clear after download is offered
+        st.session_state.auto_download_pdf = None
 
 if __name__ == "__main__":
     main()
