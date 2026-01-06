@@ -1030,7 +1030,7 @@ def main():
             if 'nem_form_initialized' not in st.session_state:
                 st.session_state.nem_form_initialized = True
             
-            # REMOVED THE ST.FORM WRAPPER - THIS IS THE KEY CHANGE
+            # REMOVED THE ST.FORM WRAPPER - WIDGETS ARE NOW DIRECTLY ACCESSIBLE
             if "last_main_dauer" not in st.session_state:
                 st.session_state.last_main_dauer = patient["dauer"]
 
@@ -1088,7 +1088,7 @@ def main():
 
             st.markdown("---")
 
-            # Each supplement row
+            # Each supplement row - NO FORM WRAPPER
             for _, row in df.iterrows():
                 cols = st.columns([2.2, 0.7, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
 
@@ -1140,14 +1140,14 @@ def main():
                 nacht_key = f"{row['id']}_Nachts"
                 comment_key = f"{row['id']}_comment"
 
-                # Dauer input
+                # Dauer input - DIRECT WIDGET, NO FORM
                 dauer_input = cols[1].number_input(
                     "", key=dauer_key, min_value=1, max_value=12, 
                     value=int(initial_dauer),
                     label_visibility="collapsed"
                 )
 
-                # Darreichungsform dropdown
+                # Darreichungsform dropdown - DIRECT WIDGET, NO FORM
                 dosage_presets = ["Kapseln", "Lösung", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML", "Andere:"]
                 
                 default_form_for_supplement = DEFAULT_FORMS.get(supplement_name, "Kapseln")
@@ -1166,7 +1166,7 @@ def main():
                     key=form_key, label_visibility="collapsed"
                 )
 
-                # Dosierung dropdown
+                # Dosierung dropdown - DIRECT WIDGET, NO FORM
                 dosierung_options = ["", "100mg", "200mg", "300mg", "400mg", "500mg"]
                 dosierung_index = 0
                 if initial_dosierung in dosierung_options:
@@ -1177,7 +1177,7 @@ def main():
                     key=dosage_key, label_visibility="collapsed"
                 )
 
-                # Custom dosage text input
+                # Custom dosage text input - DIRECT WIDGET, NO FORM
                 custom_form = ""
                 if selected_form == "Andere:":
                     custom_form_value = initial_form if initial_form and initial_form not in dosage_presets else ""
@@ -1193,7 +1193,7 @@ def main():
                 else:
                     st.session_state[override_key] = None
 
-                # Intake dropdowns
+                # Intake dropdowns - DIRECT WIDGETS, NO FORM
                 dose_options = ["", "1", "2", "3", "4", "5"]
                 
                 nue_val = cols[4].selectbox("", dose_options, 
@@ -1212,38 +1212,19 @@ def main():
                                             index=dose_options.index(initial_nacht) if initial_nacht in dose_options else 0,
                                             key=nacht_key, label_visibility="collapsed")
 
-                # Kommentar field
+                # Kommentar field - DIRECT WIDGET, NO FORM
                 comment = cols[9].text_input(
                     "", key=comment_key, placeholder="Kommentar",
                     value=initial_comment or "", label_visibility="collapsed"
                 )
 
-                # Get the final form value
-                final_form = custom_form if custom_form else selected_form
-                if final_form == "Andere:":
-                    final_form = ""
-                
-                # Create prescription data for this supplement
-                prescription_data = {
-                    "name": supplement_name,
-                    "Dauer": f"{dauer_input} M",
-                    "Darreichungsform": final_form,
-                    "Dosierung": dosierung_val,
-                    "Nüchtern": nue_val,
-                    "Morgens": morg_val,
-                    "Mittags": mitt_val,
-                    "Abends": abend_val,
-                    "Nachts": nacht_val,
-                    "Kommentar": comment
-                }
-
-            # PDF button - NO LONGER IN A FORM
+            # PDF button - SEPARATE BUTTON, NO FORM
             if st.button("NEM PDF generieren"):
+                # Collect current NEM data from session state
                 all_nem = collect_nem_from_session(df, patient)
                 st.session_state.nem_prescriptions = all_nem
 
-                
-                # Filter supplements for PDF - only include supplements with actual prescription data
+                # Filter supplements for PDF
                 pdf_supplements_data = []
                 for prescription in all_nem:
                     has_prescription_data = False
@@ -1266,7 +1247,6 @@ def main():
                     if has_prescription_data:
                         pdf_supplements_data.append(prescription)
 
-                
                 # Only generate PDF if there are actual prescriptions
                 if pdf_supplements_data:
                     # Generate PDF and trigger auto-download
@@ -1616,10 +1596,14 @@ def main():
         if not patient["patient"]:
             st.error("Bitte Patientennamen eingeben!")
         else:
-            # 🔑 ALWAYS rebuild NEM from session state
+            # CRITICAL FIX: Collect NEM data directly from session state
+            # This will get the current values from all NEM widgets
             nem_prescriptions = collect_nem_from_session(df, patient)
+            
+            # Store in session state for consistency
             st.session_state.nem_prescriptions = nem_prescriptions
-
+            
+            # Get other tab data from session state
             therapieplan_data = st.session_state.therapieplan_data
             ernaehrung_data = st.session_state.ernaehrung_data
             infusion_data = st.session_state.infusion_data
@@ -1636,6 +1620,8 @@ def main():
                 st.session_state.show_save_success = True
                 st.session_state.last_loaded_patient = patient["patient"]
                 st.rerun()
+            else:
+                st.error("Fehler beim Speichern der Daten!")
 
 
 if __name__ == "__main__":
