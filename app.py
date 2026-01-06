@@ -1031,19 +1031,23 @@ def main():
                 st.session_state.nem_form_initialized = True
             
             # Use a form for better data handling
-            with st.form("nem_form", clear_on_submit=False):
-                if "last_main_dauer" not in st.session_state:
-                    st.session_state.last_main_dauer = patient["dauer"]
+            # --- NEM TAB (FORM REMOVED – CLOUD SAFE) ---
 
-                if st.session_state.last_main_dauer != patient["dauer"]:
-                    for _, row in df.iterrows():
-                        override_key = f"dauer_override_{row['id']}"
-                        widget_key = f"{row['id']}_dauer"
-                        if st.session_state[override_key] is None:
-                            current_val = st.session_state.get(widget_key)
-                            if current_val != patient["dauer"]:
-                                st.session_state.update({widget_key: patient["dauer"]})
-                    st.session_state.last_main_dauer = patient["dauer"]
+            if "last_main_dauer" not in st.session_state:
+                st.session_state.last_main_dauer = patient["dauer"]
+            
+            # Sync supplement durations when main duration changes
+            if st.session_state.last_main_dauer != patient["dauer"]:
+                for _, row in df.iterrows():
+                    override_key = f"dauer_override_{row['id']}"
+                    widget_key = f"{row['id']}_dauer"
+            
+                    if st.session_state.get(override_key) is None:
+                        if st.session_state.get(widget_key) != patient["dauer"]:
+                            st.session_state[widget_key] = patient["dauer"]
+            
+                st.session_state.last_main_dauer = patient["dauer"]
+
 
                 # CSS for better styling
                 st.markdown("""
@@ -1245,7 +1249,8 @@ def main():
                     #all_supplements_data.append(prescription_data)
 
                 # Form submit buttons
-                pdf_submitted = st.form_submit_button("NEM PDF generieren")
+                pdf_submitted = st.button("NEM PDF generieren")
+
 
             # Handle form submissions OUTSIDE the form context
             if pdf_submitted:
