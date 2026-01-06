@@ -1253,33 +1253,33 @@ def main():
 
 
             # Handle form submissions OUTSIDE the form context
-            if pdf_submitted:
-                all_nem = collect_nem_from_session(df, patient)
-                st.session_state.nem_prescriptions = all_nem
-
-                
-                # Filter supplements for PDF - only include supplements with actual prescription data
-                pdf_supplements_data = []
-                for prescription in all_nem:
-                    has_prescription_data = False
-
-                    for field in ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]:
-                        if prescription.get(field, "").strip():
-                            has_prescription_data = True
-                            break
-
-                    if not has_prescription_data:
-                        if prescription.get("Dosierung", "").strip():
-                            has_prescription_data = True
-                        elif prescription.get("Kommentar", "").strip():
-                            has_prescription_data = True
-                        elif prescription.get("Darreichungsform", "").strip() and prescription["Darreichungsform"] != DEFAULT_FORMS.get(prescription["name"], "Kapseln"):
-                            has_prescription_data = True
-                        elif prescription.get("Dauer") != f"{patient['dauer']} M":
-                            has_prescription_data = True
-
-                    if has_prescription_data:
-                        pdf_supplements_data.append(prescription)
+                if pdf_submitted:
+                    all_nem = collect_nem_from_session(df, patient)
+                    st.session_state.nem_prescriptions = all_nem
+    
+                    
+                    # Filter supplements for PDF - only include supplements with actual prescription data
+                    pdf_supplements_data = []
+                    for prescription in all_nem:
+                        has_prescription_data = False
+    
+                        for field in ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]:
+                            if prescription.get(field, "").strip():
+                                has_prescription_data = True
+                                break
+    
+                        if not has_prescription_data:
+                            if prescription.get("Dosierung", "").strip():
+                                has_prescription_data = True
+                            elif prescription.get("Kommentar", "").strip():
+                                has_prescription_data = True
+                            elif prescription.get("Darreichungsform", "").strip() and prescription["Darreichungsform"] != DEFAULT_FORMS.get(prescription["name"], "Kapseln"):
+                                has_prescription_data = True
+                            elif prescription.get("Dauer") != f"{patient['dauer']} M":
+                                has_prescription_data = True
+    
+                        if has_prescription_data:
+                            pdf_supplements_data.append(prescription)
 
                 
                 # Only generate PDF if there are actual prescriptions
