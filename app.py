@@ -1163,10 +1163,10 @@ def main():
 
             st.markdown("---")
 
-            # Create list for ALL supplements data (for saving)
-            all_supplements_data = []  # This contains ALL supplements with their current values
+            # We'll store widget values in a list
+            widget_values = []
             
-            # Each supplement row
+            # Each supplement row - JUST RENDER THE WIDGETS
             for _, row in df.iterrows():
                 cols = st.columns([2.2, 0.7, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
 
@@ -1218,14 +1218,14 @@ def main():
                 nacht_key = f"{row['id']}_Nachts"
                 comment_key = f"{row['id']}_comment"
 
-                # Dauer input - GET CURRENT VALUE FROM WIDGET
+                # Dauer input
                 dauer_input = cols[1].number_input(
                     "", key=dauer_key, min_value=1, max_value=12, 
                     value=int(initial_dauer),
                     label_visibility="collapsed"
                 )
 
-                # Darreichungsform dropdown - GET CURRENT VALUE FROM WIDGET
+                # Darreichungsform dropdown
                 dosage_presets = ["Kapseln", "Lösung", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML", "Andere:"]
                 
                 default_form_for_supplement = DEFAULT_FORMS.get(supplement_name, "Kapseln")
@@ -1244,7 +1244,7 @@ def main():
                     key=form_key, label_visibility="collapsed"
                 )
 
-                # Dosierung dropdown - GET CURRENT VALUE FROM WIDGET
+                # Dosierung dropdown
                 dosierung_options = ["", "100mg", "200mg", "300mg", "400mg", "500mg"]
                 dosierung_index = 0
                 if initial_dosierung in dosierung_options:
@@ -1255,7 +1255,7 @@ def main():
                     key=dosage_key, label_visibility="collapsed"
                 )
 
-                # Custom dosage text input - GET CURRENT VALUE FROM WIDGET
+                # Custom dosage text input
                 custom_form = ""
                 if selected_form == "Andere:":
                     custom_form_value = initial_form if initial_form and initial_form not in dosage_presets else ""
@@ -1265,13 +1265,7 @@ def main():
                         label_visibility="collapsed"
                     )
 
-                # Sync override state
-                if dauer_input != patient["dauer"]:
-                    st.session_state[override_key] = dauer_input
-                else:
-                    st.session_state[override_key] = None
-
-                # Intake dropdowns - GET CURRENT VALUES FROM WIDGETS
+                # Intake dropdowns
                 dose_options = ["", "1", "2", "3", "4", "5"]
                 
                 nue_val = cols[4].selectbox("", dose_options, 
@@ -1290,7 +1284,7 @@ def main():
                                             index=dose_options.index(initial_nacht) if initial_nacht in dose_options else 0,
                                             key=nacht_key, label_visibility="collapsed")
 
-                # Kommentar field - GET CURRENT VALUE FROM WIDGET
+                # Kommentar field
                 comment = cols[9].text_input(
                     "", key=comment_key, placeholder="Kommentar",
                     value=initial_comment or "", label_visibility="collapsed"
@@ -1301,30 +1295,83 @@ def main():
                 if final_form == "Andere:":
                     final_form = ""
                 
-                # Create prescription data for this supplement with CURRENT VALUES
-                prescription_data = {
+                # Store widget values to collect AFTER all widgets are rendered
+                widget_values.append({
                     "name": supplement_name,
-                    "Dauer": f"{dauer_input} M",
-                    "Darreichungsform": final_form,
-                    "Dosierung": dosierung_val,
+                    "dauer_key": dauer_key,
+                    "form_key": form_key,
+                    "dosage_key": dosage_key,
+                    "custom_form_key": custom_form_key,
+                    "nue_key": nue_key,
+                    "morg_key": morg_key,
+                    "mitt_key": mitt_key,
+                    "abend_key": abend_key,
+                    "nacht_key": nacht_key,
+                    "comment_key": comment_key,
+                    "selected_form": selected_form,
+                    "custom_form": custom_form,
+                    "final_form": final_form
+                })
+                
+                # Sync override state
+                if dauer_input != patient["dauer"]:
+                    st.session_state[override_key] = dauer_input
+                else:
+                    st.session_state[override_key] = None
+
+            # NOW collect all widget values after they've been rendered
+            all_supplements_data = []
+            for widget_info in widget_values:
+                # Get CURRENT values from Streamlit's state
+                dauer_val = st.session_state.get(widget_info["dauer_key"], patient["dauer"])
+                form_val = st.session_state.get(widget_info["form_key"], DEFAULT_FORMS.get(widget_info["name"], "Kapseln"))
+                dosage_val = st.session_state.get(widget_info["dosage_key"], "")
+                
+                # Handle custom form
+                final_form_val = widget_info["final_form"]
+                if widget_info["selected_form"] == "Andere:":
+                    custom_val = st.session_state.get(widget_info["custom_form_key"], "")
+                    final_form_val = custom_val if custom_val else widget_info["final_form"]
+                
+                # Get intake values
+                nue_val = st.session_state.get(widget_info["nue_key"], "")
+                morg_val = st.session_state.get(widget_info["morg_key"], "")
+                mitt_val = st.session_state.get(widget_info["mitt_key"], "")
+                abend_val = st.session_state.get(widget_info["abend_key"], "")
+                nacht_val = st.session_state.get(widget_info["nacht_key"], "")
+                comment_val = st.session_state.get(widget_info["comment_key"], "")
+                
+                prescription_data = {
+                    "name": widget_info["name"],
+                    "Dauer": f"{dauer_val} M",
+                    "Darreichungsform": final_form_val,
+                    "Dosierung": dosage_val,
                     "Nüchtern": nue_val,
                     "Morgens": morg_val,
                     "Mittags": mitt_val,
                     "Abends": abend_val,
                     "Nachts": nacht_val,
-                    "Kommentar": comment
+                    "Kommentar": comment_val
                 }
                 
-                # ALWAYS add to all_supplements_data for saving
                 all_supplements_data.append(prescription_data)
-
-            # Store ALL data in session state (auto-saves as user interacts)
+            
+            # Store ALL data in session state
             st.session_state.nem_prescriptions = all_supplements_data
             
-            # PDF generation button (outside any form)
+            # Optional: Show save status
+            with st.expander("💾 Speicherstatus anzeigen"):
+                prescribed_count = len([p for p in all_supplements_data if any([
+                    p.get("Nüchtern"), p.get("Morgens"), p.get("Mittags"), 
+                    p.get("Abends"), p.get("Nachts"), p.get("Dosierung"),
+                    p.get("Kommentar")
+                ])])
+                st.write(f"Gespeichert: {len(all_supplements_data)} Supplemente")
+                st.write(f"Davon verordnet: {prescribed_count}")
+            
+            # PDF generation button
             if st.button("NEM PDF generieren"):
                 # Filter supplements for PDF - only include supplements with actual prescription data
-                # This is for PDF display only - ALL data is already saved in session_state
                 pdf_supplements_data = []
                 for prescription in all_supplements_data:
                     # Check if there's any actual prescription data
