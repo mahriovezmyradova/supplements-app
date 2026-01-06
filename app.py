@@ -717,6 +717,8 @@ def patient_inputs(conn):
 
 
 
+
+
 # --- Helpers ---
 def _fmt_dt(d):
     try:
@@ -735,7 +737,7 @@ class PDF(FPDF):
         # Add title between logo and address
         self.set_font("Helvetica", "B", 16)
         self.set_xy(100, 13)
-        self.cell(100, 10, "THERAPIEKONZEPT", 0, 0, "C")
+        self.cell(100, 10, "THERAPIEKONZEPT - NEM", 0, 0, "C")
         
         self.set_font("Helvetica", "", 10)
         self.set_xy(230, 10)
@@ -1006,6 +1008,249 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                             pdf.ln(1)
 
     return bytes(pdf.output(dest="S"))
+    
+    pdf = PDF("L", "mm", "A4")
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Helper function to clean text
+    def clean_text(text):
+        if not text:
+            return ""
+        # Replace en dash and em dash with regular dash
+        text = str(text)
+        text = text.replace('–', '-')  # en dash
+        text = text.replace('—', '-')  # em dash
+        text = text.replace('−', '-')  # minus sign
+        # Remove or replace other unsupported characters
+        # Add more replacements as needed
+        return text
+
+    # Patient info starts directly
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(35, 6, "Vor- und Nachname:", 0, 0)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, clean_text(patient.get("patient", "")), 0, 1)
+    pdf.ln(2)
+
+    col_w = [38, 38, 30, 30, 42, 28, 35, 70]
+    
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w[0], 6, "Geburtsdatum:", 0, 0)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w[1], 6, _fmt_dt(patient.get("geburtsdatum")), 0, 0)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w[2], 6, "Geschlecht:", 0, 0)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w[3], 6, patient.get("geschlecht", ""), 0, 0)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w[4], 6, "Grösse:", 0, 0)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w[5], 6, f"{patient.get('groesse','')} cm", 0, 0)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w[6], 6, "Gewicht:", 0, 0)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w[7], 6, f"{patient.get('gewicht','')} kg", 0, 1)
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w[0], 6, "Therapiebeginn:", 0, 0)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w[1], 6, _fmt_dt(patient.get("therapiebeginn")), 0, 0)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w[2], 6, "Dauer:", 0, 0)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w[3], 6, f"{patient.get('dauer','')} Monate", 0, 0)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w[4], 6, "TW besprochen?:", 0, 0)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(col_w[5], 6, patient.get("tw_besprochen", ""), 0, 0)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(col_w[6], 6, "Bekannte Allergie:", 0, 0)
+    pdf.set_font("Helvetica", "", 10)
+    allergie_text = patient.get("allergie", "")
+    if len(allergie_text) > 45:
+        allergie_text = allergie_text[:42] + "..."
+    pdf.cell(col_w[7], 6, allergie_text, 0, 1)
+    pdf.ln(3)
+
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 6, "Diagnosen:", 0, 1)
+    pdf.set_font("Helvetica", "", 10)
+    diagnosen = patient.get("diagnosen", "") or "-"
+    pdf.multi_cell(0, 5, diagnosen, 0, "L")
+    pdf.ln(10)  # Add more space before content
+
+    # Content based on tab - ALL TABS GET GREEN HEADER
+    table_width = 277
+    
+    # Set green background and white text for header
+    pdf.set_fill_color(38, 96, 65)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 12)
+    
+    # Create header text based on tab name
+    if tab_name == "NEM":
+        header_text = "NAHRUNGSERGÄNZUNGSMITTEL (NEM) VO"
+    elif tab_name == "THERAPIEPLAN":
+        header_text = "THERAPIEPLAN – ÜBERSICHT & MAßNAHMEN"
+    elif tab_name == "ERNÄHRUNG & LIFESTYLE":
+        header_text = "ERNÄHRUNGSTHERAPIE – LIFESTYLEÄNDERUNG"
+    elif tab_name == "INFUSIONSTHERAPIE":
+        header_text = "INFUSIONSTHERAPIE"
+    else:
+        header_text = tab_name
+    
+    pdf.cell(table_width, 8, header_text, 0, 1, "L", True)
+    pdf.ln(3)
+    
+    # Reset text color
+    pdf.set_text_color(0, 0, 0)
+    
+    if tab_name == "NEM" and isinstance(supplements, list):
+        # NEM tab - show table
+        headers = ["Supplement", "Dauer", "Darreichungsform", "Dosierung", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
+        base_widths = [50, 14, 35, 19, 18, 18, 18, 18, 18]
+        used_width = sum(base_widths)
+        comment_width = table_width - used_width
+        widths = base_widths + [comment_width]
+
+        # Table headers
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_fill_color(230, 230, 230)  # Light gray for column headers
+        for w, h in zip(widths, headers):
+            pdf.cell(w, 8, h, 1, 0, "C", True)
+        pdf.ln()
+        
+        pdf.set_fill_color(255, 255, 255)  # White for content
+        pdf.set_font("Helvetica", "", 9)
+
+        for s in supplements:
+            row = [
+                clean_text(s.get("name", "")),
+                clean_text(s.get("Dauer", "")),
+                clean_text(s.get("Darreichungsform", "")),
+                clean_text(s.get("Dosierung", "")), 
+                clean_text(s.get("Nüchtern", "")),
+                clean_text(s.get("Morgens", "")),
+                clean_text(s.get("Mittags", "")),
+                clean_text(s.get("Abends", "")),
+                clean_text(s.get("Nachts", "")),
+                clean_text(s.get("Kommentar", ""))
+            ]
+
+            comment_text = row[-1] or ""
+            line_height = 8
+            comment_lines = int(pdf.get_string_width(comment_text) / (widths[-1] - 2)) + 1 if comment_text else 1
+            row_height = max(line_height, line_height * comment_lines)
+
+            for i, (w, text, header) in enumerate(zip(widths[:-1], row[:-1], headers[:-1])):
+                align = "L" if i == 0 else "C"
+                if header in ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]:
+                    display_text = f"{text}x" if str(text).strip() else ""
+                else:
+                    display_text = str(text)
+                pdf.cell(w, row_height, display_text, 1, 0, align)
+
+            x = pdf.get_x()
+            y = pdf.get_y()
+            pdf.multi_cell(widths[-1], line_height, comment_text, 1)
+            pdf.set_xy(x + widths[-1], y)
+            pdf.ln(row_height)
+    else:
+        # Other tabs - show recommendations
+        pdf.set_font("Helvetica", "", 10)
+        if isinstance(supplements, dict):
+            # Add section headers for Therapieplan
+            if tab_name == "THERAPIEPLAN":
+                sections = {
+                    "Diagnostik & Überprüfung": ["zaehne", "zaehne_zu_pruefen"],
+                    "Darm & Entgiftung": ["darm_biofilm", "darmsanierung", "darmsanierung_dauer", "hydrocolon", "parasiten", "parasiten_bio", "leberdetox", "nierenprogramm"],
+                    "Infektionen & Ausleitung": ["infektion_bakt", "infektion_virus", "ausleitung_inf", "ausleitung_oral"],
+                    "Therapieformen": ["mikronaehrstoffe", "infusionsbehandlung", "neuraltherapie", "eigenblut", "medikamente", "bio_isopath", "timewaver_analyse", "timewaver_freq", "weitere_labor"],
+                    "Ergänzende Therapieformen": ["ernaehrung", "hypnose", "yager", "energetisch"]
+                }
+                
+                # Map of field names to display text
+                field_display_names = {
+                    "zaehne": "Überprüfung der Zähne/Kieferknochen mittels OPG (Panoramaaufnahme mit lachendem Gebiss) / DVT",
+                    "zaehne_zu_pruefen": "Zähne zu überprüfen",
+                    "darm_biofilm": "Darm - Biofilmentfernung nach www.regenbogenkreis.de (Express-Darmkur 4 Tageskur)",
+                    "darmsanierung": "Darmsanierung nach Paracelsus Klinik (Rezept von Praxis)",
+                    "darmsanierung_dauer": "Darmsanierung Dauer",
+                    "hydrocolon": "mit Hydrocolon (Darmspülung) 2x insgesamt, Abstand 14 Tage mit Rekolonisierungs-Shot",
+                    "parasiten": "Parasitenbehandlung mit Vermox (3 Tage)",
+                    "parasiten_bio": "Biologisches Parasitenprogramm (z. B. www.drclarkcenter.de)",
+                    "leberdetox": "Leberdetox Behandlung nach Paracelsus Klinik (2-Tageskur, 4–5× alle 4–6 Wochen)",
+                    "nierenprogramm": "Nierenprogramm nach Dr. Clark – 4 Wochen – bitte bei www.drclarkcenter.de beziehen",
+                    "infektion_bakt": "Infektionsbehandlung für Bakterien (Borr./Helicob.)",
+                    "infektion_virus": "Infektionsbehandlung für Viren (EBV, HPV, Herpes, Corona)",
+                    "ausleitung_inf": "Ausleitung von Schwermetallen/Umweltgiften/PostVacSyndrom mit Infusionen",
+                    "ausleitung_oral": "Ausleitung von Schwermetallen/Umweltgiften/PostVacSyndrom oral",
+                    "mikronaehrstoffe": "Einnahme von Mikronährstoffen (NEM-Verordnung)",
+                    "infusionsbehandlung": "Infusionsbehandlung",
+                    "neuraltherapie": "Neuraltherapie",
+                    "eigenblut": "Eigenbluttherapie",
+                    "medikamente": "Medikamentenverordnung",
+                    "bio_isopath": "Biologische / Isopathische Therapie",
+                    "timewaver_analyse": "Timewaver Analyse",
+                    "timewaver_freq": "Timewaver Frequency Behandlung",
+                    "weitere_labor": "Weitere Labordiagnostik (z. B. IMD, Dedimed, MMD, NextGen Onco)",
+                    "ernaehrung": "Ernährungsänderung und -beratung",
+                    "hypnose": "Hypnosetherapie",
+                    "yager": "Yagertherapie",
+                    "energetisch": "Energetische Behandlung (Marie / Noreen / Martin / KU / Sandra)"
+                }
+                
+                for section_name, fields in sections.items():
+                    # Add section header
+                    pdf.set_font("Helvetica", "B", 11)
+                    pdf.cell(0, 7, section_name + ":", 0, 1)
+                    pdf.ln(1)
+                    pdf.set_font("Helvetica", "", 10)
+                    
+                    # Add items in this section
+                    for field in fields:
+                        value = supplements.get(field)
+                        if value:
+                            text = ""
+                            display_name = field_display_names.get(field, field)
+                            
+                            if isinstance(value, bool) and value:
+                                text = f"- {display_name}"
+                            elif isinstance(value, str) and value.strip():
+                                text = f"- {display_name}: {value}"
+                            elif isinstance(value, list) and value:
+                                text = f"- {display_name}: {', '.join(value)}"
+                            
+                            if text:
+                                pdf.multi_cell(250, 5, text, 0, "L")
+                                pdf.ln(1)
+                    
+                    pdf.ln(3)  # Space between sections
+                    
+            # For other tabs (Ernährung, Infusion)
+            else:
+                for key, value in supplements.items():
+                    if value:
+                        text = ""
+                        if isinstance(value, bool) and value:
+                            cleaned_key = clean_text(key)
+                            text = f"- {cleaned_key}"
+                        elif isinstance(value, str) and value.strip():
+                            cleaned_key = clean_text(key)
+                            cleaned_value = clean_text(value)
+                            text = f"- {cleaned_key}: {cleaned_value}"
+                        elif isinstance(value, list) and value:
+                            cleaned_key = clean_text(key)
+                            cleaned_values = [clean_text(str(v)) for v in value]
+                            text = f"- {cleaned_key}: {', '.join(cleaned_values)}"
+                        
+                        if text:
+                            pdf.multi_cell(250, 5, text, 0, "L")
+                            pdf.ln(1)
+
+    return bytes(pdf.output(dest="S"))
 
 # --- Main app ---
 def main():
@@ -1102,302 +1347,291 @@ def main():
 
     # TAB 1: NEM
     # TAB 1: NEM
+# TAB 1: NEM
     with tabs[0]:
         # Store NEM prescriptions in a container
         nem_container = st.container()
         
         with nem_container:
-            if "last_main_dauer" not in st.session_state:
-                st.session_state.last_main_dauer = patient["dauer"]
-    
-            if st.session_state.last_main_dauer != patient["dauer"]:
+            # Initialize form data
+            if 'nem_form_initialized' not in st.session_state:
+                st.session_state.nem_form_initialized = True
+            
+            # Use a form for better data handling
+            with st.form("nem_form", clear_on_submit=False):
+                if "last_main_dauer" not in st.session_state:
+                    st.session_state.last_main_dauer = patient["dauer"]
+
+                if st.session_state.last_main_dauer != patient["dauer"]:
+                    for _, row in df.iterrows():
+                        override_key = f"dauer_override_{row['id']}"
+                        widget_key = f"{row['id']}_dauer"
+                        if st.session_state[override_key] is None:
+                            current_val = st.session_state.get(widget_key)
+                            if current_val != patient["dauer"]:
+                                st.session_state.update({widget_key: patient["dauer"]})
+                    st.session_state.last_main_dauer = patient["dauer"]
+
+                # CSS for better styling
+                st.markdown("""
+                    <style>
+                    div[data-testid="stVerticalBlock"] > div {
+                        margin-bottom: -6px !important;
+                    }
+                    [data-testid="stCheckbox"] {
+                        margin-top: -6px !important;
+                        margin-bottom: -6px !important;
+                    }
+                    .custom-input input {
+                        height: 30px !important;
+                        font-size: 14px !important;
+                        padding: 4px 6px !important;
+                    }
+                    [data-testid="stHorizontalBlock"] > div[data-testid="column"]:not(:first-child) p {
+                        text-align: center !important;
+                        margin-bottom: 0px !important;
+                    }
+                    [data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child p {
+                        text-align: left !important;
+                        margin-bottom: 0px !important;
+                    }
+                    /* Add this for the new color theme */
+                    .stButton > button {
+                        background-color: rgb(38, 96, 65) !important;
+                        color: white !important;
+                    }
+                    .stButton > button:hover {
+                        background-color: rgb(30, 76, 52) !important;
+                    }
+                    </style>
+                """, unsafe_allow_html=True)
+
+                # Header row
+                header_cols = st.columns([2.2, 0.7, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
+                headers = ["Supplement", "Dauer (M)", "Darreichungsform", "Dosierung",
+                        "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
+
+                for col, text in zip(header_cols, headers):
+                    col.markdown(f"**{text}**")
+
+                st.markdown("---")
+
+                # Create lists for different purposes
+                all_supplements_data = []  # For saving - includes ALL supplements
+                
+                # Each supplement row
                 for _, row in df.iterrows():
+                    cols = st.columns([2.2, 0.7, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
+
+                    # Supplement name
+                    supplement_name = row["name"]
+                    cols[0].markdown(supplement_name)
+
                     override_key = f"dauer_override_{row['id']}"
-                    widget_key = f"{row['id']}_dauer"
-                    if st.session_state[override_key] is None:
-                        current_val = st.session_state.get(widget_key)
-                        if current_val != patient["dauer"]:
-                            st.session_state.update({widget_key: patient["dauer"]})
-                st.session_state.last_main_dauer = patient["dauer"]
-    
-            # CSS for better styling
-            st.markdown("""
-                <style>
-                div[data-testid="stVerticalBlock"] > div {
-                    margin-bottom: -6px !important;
-                }
-                [data-testid="stCheckbox"] {
-                    margin-top: -6px !important;
-                    margin-bottom: -6px !important;
-                }
-                .custom-input input {
-                    height: 30px !important;
-                    font-size: 14px !important;
-                    padding: 4px 6px !important;
-                }
-                [data-testid="stHorizontalBlock"] > div[data-testid="column"]:not(:first-child) p {
-                    text-align: center !important;
-                    margin-bottom: 0px !important;
-                }
-                [data-testid="stHorizontalBlock"] > div[data-testid="column"]:first-child p {
-                    text-align: left !important;
-                    margin-bottom: 0px !important;
-                }
-                /* Add this for the new color theme */
-                .stButton > button {
-                    background-color: rgb(38, 96, 65) !important;
-                    color: white !important;
-                }
-                .stButton > button:hover {
-                    background-color: rgb(30, 76, 52) !important;
-                }
-                </style>
-            """, unsafe_allow_html=True)
-    
-            # Header row
-            header_cols = st.columns([2.2, 0.7, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
-            headers = ["Supplement", "Dauer (M)", "Darreichungsform", "Dosierung",
-                    "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
-    
-            for col, text in zip(header_cols, headers):
-                col.markdown(f"**{text}**")
-    
-            st.markdown("---")
-    
-            # Initialize nem_prescriptions if not exists
-            if 'nem_prescriptions' not in st.session_state:
-                st.session_state.nem_prescriptions = []
-    
-            # Create a dictionary to map supplement names to their data for quick lookup
-            current_prescriptions_dict = {}
-            for prescription in st.session_state.nem_prescriptions:
-                current_prescriptions_dict[prescription["name"]] = prescription
-    
-            # We'll collect all widget values here
-            all_widget_data = []
-    
-            # Each supplement row
-            for _, row in df.iterrows():
-                cols = st.columns([2.2, 0.7, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
-    
-                # Supplement name
-                supplement_name = row["name"]
-                cols[0].markdown(supplement_name)
-    
-                override_key = f"dauer_override_{row['id']}"
-    
-                # Get saved prescription data for this supplement
-                saved_prescription = current_prescriptions_dict.get(supplement_name)
-    
-                # Determine initial values - use saved data if exists, otherwise defaults
-                if saved_prescription:
-                    initial_dauer = int(saved_prescription.get("Dauer", "0 M").replace(" M", ""))
-                    initial_form = saved_prescription.get("Darreichungsform", "")
-                    initial_dosierung = saved_prescription.get("Dosierung", "")
-                    initial_nue = saved_prescription.get("Nüchtern", "")
-                    initial_morg = saved_prescription.get("Morgens", "")
-                    initial_mitt = saved_prescription.get("Mittags", "")
-                    initial_abend = saved_prescription.get("Abends", "")
-                    initial_nacht = saved_prescription.get("Nachts", "")
-                    initial_comment = saved_prescription.get("Kommentar", "")
-                else:
-                    # Check if we have an override value
-                    override_dauer = st.session_state.get(override_key)
-                    initial_dauer = override_dauer if override_dauer is not None else patient["dauer"]
-                    initial_form = DEFAULT_FORMS.get(supplement_name, "Kapseln")
-                    initial_dosierung = ""
-                    initial_nue = ""
-                    initial_morg = ""
-                    initial_mitt = ""
-                    initial_abend = ""
-                    initial_nacht = ""
-                    initial_comment = ""
-    
-                # Create unique keys for each widget
-                dauer_key = f"{row['id']}_dauer"
-                form_key = f"{row['id']}_darreichungsform"
-                dosage_key = f"{row['id']}_dosierung"
-                custom_form_key = f"{row['id']}_custom_dosage"
-                nue_key = f"{row['id']}_Nuechtern"
-                morg_key = f"{row['id']}_Morgens"
-                mitt_key = f"{row['id']}_Mittags"
-                abend_key = f"{row['id']}_Abends"
-                nacht_key = f"{row['id']}_Nachts"
-                comment_key = f"{row['id']}_comment"
-    
-                # Dauer input
-                dauer_input = cols[1].number_input(
-                    "", key=dauer_key, min_value=1, max_value=12, 
-                    value=int(initial_dauer),
-                    label_visibility="collapsed"
-                )
-    
-                # Darreichungsform dropdown
-                dosage_presets = ["Kapseln", "Lösung", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML", "Andere:"]
-                
-                default_form_for_supplement = DEFAULT_FORMS.get(supplement_name, "Kapseln")
-                form_index = 0
-                if initial_form:
-                    if initial_form in dosage_presets:
-                        form_index = dosage_presets.index(initial_form)
-                    elif initial_form.strip():
-                        form_index = dosage_presets.index("Andere:")
-                else:
-                    if default_form_for_supplement in dosage_presets:
-                        form_index = dosage_presets.index(default_form_for_supplement)
-                
-                selected_form = cols[2].selectbox(
-                    "", dosage_presets, index=form_index,
-                    key=form_key, label_visibility="collapsed"
-                )
-    
-                # Dosierung dropdown
-                dosierung_options = ["", "100mg", "200mg", "300mg", "400mg", "500mg"]
-                dosierung_index = 0
-                if initial_dosierung in dosierung_options:
-                    dosierung_index = dosierung_options.index(initial_dosierung)
-                
-                dosierung_val = cols[3].selectbox(
-                    "", dosierung_options, index=dosierung_index,
-                    key=dosage_key, label_visibility="collapsed"
-                )
-    
-                # Custom dosage text input
-                custom_form = ""
-                if selected_form == "Andere:":
-                    # Get the custom value - check if we have it in saved data
-                    custom_form_value = ""
-                    if saved_prescription and saved_prescription.get("Darreichungsform"):
-                        # If saved form is not in presets, use it as custom value
-                        if saved_prescription["Darreichungsform"] not in dosage_presets:
-                            custom_form_value = saved_prescription["Darreichungsform"]
-                    
-                    custom_form = cols[2].text_input(
-                        "", key=custom_form_key, placeholder="z. B. Pulver",
-                        value=custom_form_value,
+
+                    # Check if we have loaded prescriptions for this supplement
+                    loaded_prescription = None
+                    if st.session_state.nem_prescriptions:
+                        for prescription in st.session_state.nem_prescriptions:
+                            if prescription.get("name") == supplement_name:
+                                loaded_prescription = prescription
+                                break
+
+                    # Determine initial values
+                    if loaded_prescription:
+                        initial_dauer = int(loaded_prescription.get("Dauer", "0 M").replace(" M", ""))
+                        initial_form = loaded_prescription.get("Darreichungsform", "")
+                        initial_dosierung = loaded_prescription.get("Dosierung", "")
+                        initial_nue = loaded_prescription.get("Nüchtern", "")
+                        initial_morg = loaded_prescription.get("Morgens", "")
+                        initial_mitt = loaded_prescription.get("Mittags", "")
+                        initial_abend = loaded_prescription.get("Abends", "")
+                        initial_nacht = loaded_prescription.get("Nachts", "")
+                        initial_comment = loaded_prescription.get("Kommentar", "")
+                    else:
+                        initial_dauer = st.session_state[override_key] if st.session_state[override_key] is not None else patient["dauer"]
+                        initial_form = DEFAULT_FORMS.get(supplement_name, "Kapseln")
+                        initial_dosierung = ""
+                        initial_nue = ""
+                        initial_morg = ""
+                        initial_mitt = ""
+                        initial_abend = ""
+                        initial_nacht = ""
+                        initial_comment = ""
+
+                    # Create unique keys for each widget
+                    dauer_key = f"{row['id']}_dauer"
+                    form_key = f"{row['id']}_darreichungsform"
+                    dosage_key = f"{row['id']}_dosierung"
+                    custom_form_key = f"{row['id']}_custom_dosage"
+                    nue_key = f"{row['id']}_Nuechtern"
+                    morg_key = f"{row['id']}_Morgens"
+                    mitt_key = f"{row['id']}_Mittags"
+                    abend_key = f"{row['id']}_Abends"
+                    nacht_key = f"{row['id']}_Nachts"
+                    comment_key = f"{row['id']}_comment"
+
+                    # Dauer input
+                    dauer_input = cols[1].number_input(
+                        "", key=dauer_key, min_value=1, max_value=12, 
+                        value=int(initial_dauer),
                         label_visibility="collapsed"
                     )
-    
-                # Sync override state
-                if dauer_input != patient["dauer"]:
-                    st.session_state[override_key] = dauer_input
-                else:
-                    st.session_state[override_key] = None
-    
-                # Intake dropdowns
-                dose_options = ["", "1", "2", "3", "4", "5"]
-                
-                nue_val = cols[4].selectbox("", dose_options, 
-                                        index=dose_options.index(initial_nue) if initial_nue in dose_options else 0,
-                                        key=nue_key, label_visibility="collapsed")
-                morg_val = cols[5].selectbox("", dose_options,
-                                        index=dose_options.index(initial_morg) if initial_morg in dose_options else 0,
-                                        key=morg_key, label_visibility="collapsed")
-                mitt_val = cols[6].selectbox("", dose_options,
-                                        index=dose_options.index(initial_mitt) if initial_mitt in dose_options else 0,
-                                        key=mitt_key, label_visibility="collapsed")
-                abend_val = cols[7].selectbox("", dose_options,
-                                            index=dose_options.index(initial_abend) if initial_abend in dose_options else 0,
-                                            key=abend_key, label_visibility="collapsed")
-                nacht_val = cols[8].selectbox("", dose_options,
-                                            index=dose_options.index(initial_nacht) if initial_nacht in dose_options else 0,
-                                            key=nacht_key, label_visibility="collapsed")
-    
-                # Kommentar field
-                comment = cols[9].text_input(
-                    "", key=comment_key, placeholder="Kommentar",
-                    value=initial_comment or "", label_visibility="collapsed"
-                )
-    
-                # Get the final form value
-                final_form = custom_form if custom_form else selected_form
-                if final_form == "Andere:":
-                    final_form = ""
-                
-                # Store the current widget data
-                widget_data = {
-                    "name": supplement_name,
-                    "Dauer": f"{dauer_input} M",
-                    "Darreichungsform": final_form,
-                    "Dosierung": dosierung_val,
-                    "Nüchtern": nue_val,
-                    "Morgens": morg_val,
-                    "Mittags": mitt_val,
-                    "Abends": abend_val,
-                    "Nachts": nacht_val,
-                    "Kommentar": comment
-                }
-                
-                all_widget_data.append(widget_data)
-    
-            # Store ALL data in session state - THIS IS THE KEY PART
-            # We need to update session state after all widgets are rendered
-            st.session_state.nem_prescriptions = all_widget_data
-            
-            # Add a small button to explicitly save NEM data
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("💾 NEM Daten speichern", use_container_width=True):
-                    # Force update session state
-                    st.session_state.nem_prescriptions = all_widget_data
-                    st.success(f"NEM Daten für {patient.get('patient', '')} gespeichert!")
-                    st.rerun()
-            
-            with col2:
-                # PDF generation button
-                if st.button("📄 NEM PDF generieren", use_container_width=True):
-                    # Filter supplements for PDF - only include supplements with actual prescription data
-                    pdf_supplements_data = []
-                    for prescription in all_widget_data:
-                        # Check if there's any actual prescription data
-                        has_prescription_data = False
-                        
-                        # Check intake times
-                        intake_fields = ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]
-                        for field in intake_fields:
-                            if prescription.get(field, "").strip():
-                                has_prescription_data = True
-                                break
-                        
-                        # If no intake times, check other prescription fields
-                        if not has_prescription_data:
-                            # Check dosage
-                            if prescription.get("Dosierung", "").strip():
-                                has_prescription_data = True
-                            # Check comment
-                            elif prescription.get("Kommentar", "").strip():
-                                has_prescription_data = True
-                            # Check if form is different from default
-                            elif prescription.get("Darreichungsform", "").strip() and prescription["Darreichungsform"] != DEFAULT_FORMS.get(prescription["name"], "Kapseln"):
-                                has_prescription_data = True
-                            # Check if duration was changed from default
-                            elif prescription.get("Dauer", "") != f"{patient['dauer']} M":
-                                has_prescription_data = True
-                        
-                        if has_prescription_data:
-                            pdf_supplements_data.append(prescription)
+
+                    # Darreichungsform dropdown
+                    dosage_presets = ["Kapseln", "Lösung", "Tabletten", "Pulver", "Tropfen", "Sachet", "TL", "EL", "ML", "Andere:"]
                     
-                    # Only generate PDF if there are actual prescriptions
-                    if pdf_supplements_data:
-                        # Generate PDF and trigger auto-download
-                        pdf_bytes = generate_pdf(patient, pdf_supplements_data, "NEM")
-                        filename = f"RevitaClinic_NEM_{patient.get('patient','')}.pdf"
-                        
-                        # Set auto-download in session state
-                        st.session_state.auto_download_pdf = {
-                            "data": pdf_bytes,
-                            "filename": filename,
-                            "mime": "application/pdf"
-                        }
-                        
-                        # Show success message
-                        st.success(f"✅ PDF mit {len(pdf_supplements_data)} NEM-Supplement(en) generiert!")
-                        
-                        # Force rerun to trigger download
-                        st.rerun()
+                    default_form_for_supplement = DEFAULT_FORMS.get(supplement_name, "Kapseln")
+                    form_index = 0
+                    if initial_form:
+                        if initial_form in dosage_presets:
+                            form_index = dosage_presets.index(initial_form)
+                        elif initial_form.strip():
+                            form_index = dosage_presets.index("Andere:")
                     else:
-                        st.warning("⚠️ Keine NEM-Supplemente ausgewählt. Bitte mindestens ein Supplement mit Dosierung oder Einnahmezeiten ausfüllen.")
+                        if default_form_for_supplement in dosage_presets:
+                            form_index = dosage_presets.index(default_form_for_supplement)
                     
+                    selected_form = cols[2].selectbox(
+                        "", dosage_presets, index=form_index,
+                        key=form_key, label_visibility="collapsed"
+                    )
+
+                    # Dosierung dropdown
+                    dosierung_options = ["", "100mg", "200mg", "300mg", "400mg", "500mg"]
+                    dosierung_index = 0
+                    if initial_dosierung in dosierung_options:
+                        dosierung_index = dosierung_options.index(initial_dosierung)
+                    
+                    dosierung_val = cols[3].selectbox(
+                        "", dosierung_options, index=dosierung_index,
+                        key=dosage_key, label_visibility="collapsed"
+                    )
+
+                    # Custom dosage text input
+                    custom_form = ""
+                    if selected_form == "Andere:":
+                        custom_form_value = initial_form if initial_form and initial_form not in dosage_presets else ""
+                        custom_form = cols[2].text_input(
+                            "", key=custom_form_key, placeholder="z. B. Pulver",
+                            value=custom_form_value,
+                            label_visibility="collapsed"
+                        )
+
+                    # Sync override state
+                    if dauer_input != patient["dauer"]:
+                        st.session_state[override_key] = dauer_input
+                    else:
+                        st.session_state[override_key] = None
+
+                    # Intake dropdowns
+                    dose_options = ["", "1", "2", "3", "4", "5"]
+                    
+                    nue_val = cols[4].selectbox("", dose_options, 
+                                            index=dose_options.index(initial_nue) if initial_nue in dose_options else 0,
+                                            key=nue_key, label_visibility="collapsed")
+                    morg_val = cols[5].selectbox("", dose_options,
+                                            index=dose_options.index(initial_morg) if initial_morg in dose_options else 0,
+                                            key=morg_key, label_visibility="collapsed")
+                    mitt_val = cols[6].selectbox("", dose_options,
+                                            index=dose_options.index(initial_mitt) if initial_mitt in dose_options else 0,
+                                            key=mitt_key, label_visibility="collapsed")
+                    abend_val = cols[7].selectbox("", dose_options,
+                                                index=dose_options.index(initial_abend) if initial_abend in dose_options else 0,
+                                                key=abend_key, label_visibility="collapsed")
+                    nacht_val = cols[8].selectbox("", dose_options,
+                                                index=dose_options.index(initial_nacht) if initial_nacht in dose_options else 0,
+                                                key=nacht_key, label_visibility="collapsed")
+
+                    # Kommentar field
+                    comment = cols[9].text_input(
+                        "", key=comment_key, placeholder="Kommentar",
+                        value=initial_comment or "", label_visibility="collapsed"
+                    )
+
+                    # Get the final form value
+                    final_form = custom_form if custom_form else selected_form
+                    if final_form == "Andere:":
+                        final_form = ""
+                    
+                    # Create prescription data for this supplement
+                    prescription_data = {
+                        "name": supplement_name,
+                        "Dauer": f"{dauer_input} M",
+                        "Darreichungsform": final_form,
+                        "Dosierung": dosierung_val,
+                        "Nüchtern": nue_val,
+                        "Morgens": morg_val,
+                        "Mittags": mitt_val,
+                        "Abends": abend_val,
+                        "Nachts": nacht_val,
+                        "Kommentar": comment
+                    }
+                    
+                    # ALWAYS add to all_supplements_data for saving
+                    all_supplements_data.append(prescription_data)
+
+                # Form submit buttons
+                pdf_submitted = st.form_submit_button("NEM PDF generieren")
+
+            # Handle form submissions OUTSIDE the form context
+            if pdf_submitted:
+                # Update session state with ALL data for saving
+                st.session_state.nem_prescriptions = all_supplements_data
+                
+                # Filter supplements for PDF - only include supplements with actual prescription data
+                pdf_supplements_data = []
+                for prescription in all_supplements_data:
+                    # Check if there's any actual prescription data
+                    has_prescription_data = False
+                    
+                    # Check intake times
+                    intake_fields = ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]
+                    for field in intake_fields:
+                        if prescription.get(field, "").strip():
+                            has_prescription_data = True
+                            break
+                    
+                    # If no intake times, check other prescription fields
+                    if not has_prescription_data:
+                        # Check dosage
+                        if prescription.get("Dosierung", "").strip():
+                            has_prescription_data = True
+                        # Check comment
+                        elif prescription.get("Kommentar", "").strip():
+                            has_prescription_data = True
+                        # Check if form is different from default
+                        elif prescription.get("Darreichungsform", "").strip() and prescription["Darreichungsform"] != DEFAULT_FORMS.get(prescription["name"], "Kapseln"):
+                            has_prescription_data = True
+                        # Check if duration was changed from default
+                        elif prescription.get("Dauer", "") != f"{patient['dauer']} M":
+                            has_prescription_data = True
+                    
+                    if has_prescription_data:
+                        pdf_supplements_data.append(prescription)
+                
+                # Only generate PDF if there are actual prescriptions
+                if pdf_supplements_data:
+                    # Generate PDF and trigger auto-download
+                    pdf_bytes = generate_pdf(patient, pdf_supplements_data, "NEM")
+                    filename = f"RevitaClinic_NEM_{patient.get('patient','')}.pdf"
+                    
+                    # Set auto-download in session state
+                    st.session_state.auto_download_pdf = {
+                        "data": pdf_bytes,
+                        "filename": filename,
+                        "mime": "application/pdf"
+                    }
+                    
+                    # Show success message
+                    st.success(f"✅ PDF mit {len(pdf_supplements_data)} NEM-Supplement(en) generiert!")
+                    
+                    # Force rerun to trigger download
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Keine NEM-Supplemente ausgewählt. Bitte mindestens ein Supplement mit Dosierung oder Einnahmezeiten ausfüllen.")
+
+    # TAB 2: Therapieplan
     # TAB 2: Therapieplan
     with tabs[1]:
         therapieplan_data = st.session_state.therapieplan_data
@@ -1755,5 +1989,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
