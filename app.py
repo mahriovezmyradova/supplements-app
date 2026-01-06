@@ -1623,30 +1623,41 @@ def main():
 
     # Handle save button (saves all tabs)
     # Handle save button (saves all tabs)
-    if save_button:
-        if not patient["patient"]:
-            st.error("Bitte Patientennamen eingeben!")
-        else:
-            # 🔑 ALWAYS rebuild NEM from session state
-            nem_prescriptions = collect_nem_from_session(df, patient)
-            st.session_state.nem_prescriptions = nem_prescriptions
-
-            therapieplan_data = st.session_state.therapieplan_data
-            ernaehrung_data = st.session_state.ernaehrung_data
-            infusion_data = st.session_state.infusion_data
-
-            # Save all data
-            if save_patient_data(
-                conn,
-                patient,
-                nem_prescriptions,
-                therapieplan_data,
-                ernaehrung_data,
-                infusion_data
-            ):
-                st.session_state.show_save_success = True
-                st.session_state.last_loaded_patient = patient["patient"]
-                st.rerun()
+        # Handle save button (saves all tabs)
+        if save_button:
+            if not patient["patient"]:
+                st.error("Bitte Patientennamen eingeben!")
+            else:
+                # 🔑 CRITICAL FIX: Always rebuild NEM prescriptions from current session state
+                nem_prescriptions = collect_nem_from_session(df, patient)
+                
+                # Update session state with current NEM data
+                st.session_state.nem_prescriptions = nem_prescriptions
+                
+                # Get data from other tabs
+                therapieplan_data = st.session_state.therapieplan_data
+                ernaehrung_data = st.session_state.ernaehrung_data
+                infusion_data = st.session_state.infusion_data
+    
+                # Debug: Show what's being saved
+                if st.secrets.get("DEBUG", False):  # Add DEBUG to your Streamlit secrets
+                    st.write(f"Saving NEM prescriptions: {len(nem_prescriptions)} items")
+                    for p in nem_prescriptions:
+                        st.write(p)
+    
+                # Save all data
+                if save_patient_data(
+                    conn,
+                    patient,
+                    nem_prescriptions,
+                    therapieplan_data,
+                    ernaehrung_data,
+                    infusion_data
+                ):
+                    st.session_state.show_save_success = True
+                    st.session_state.last_loaded_patient = patient["patient"]
+                    # Force immediate rerun to show success message
+                    st.rerun()
 
 
 if __name__ == "__main__":
