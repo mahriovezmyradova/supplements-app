@@ -1685,15 +1685,63 @@ def main():
             st.rerun()
 
     # Handle save button (saves all tabs)
+    # In your main() function, update the Save button section:
     if save_button:
         if not patient["patient"]:
             st.error("Bitte Patientennamen eingeben!")
         else:
-            # Get data from all tabs (already updated in session state)
-            nem_prescriptions = st.session_state.nem_prescriptions
+            # Collect NEM data from current widget values
+            nem_prescriptions = []
+            
+            # Reconstruct NEM data from session state
+            for _, row in df.iterrows():
+                supplement_name = row["name"]
+                
+                # Get widget keys
+                dauer_key = f"{row['id']}_dauer"
+                form_key = f"{row['id']}_darreichungsform"
+                dosage_key = f"{row['id']}_dosierung"
+                custom_form_key = f"{row['id']}_custom_dosage"
+                nue_key = f"{row['id']}_Nuechtern"
+                morg_key = f"{row['id']}_Morgens"
+                mitt_key = f"{row['id']}_Mittags"
+                abend_key = f"{row['id']}_Abends"
+                nacht_key = f"{row['id']}_Nachts"
+                comment_key = f"{row['id']}_comment"
+                
+                # Get values from session state
+                dauer_val = st.session_state.get(dauer_key, patient["dauer"])
+                form_val = st.session_state.get(form_key, DEFAULT_FORMS.get(supplement_name, "Kapseln"))
+                dosage_val = st.session_state.get(dosage_key, "")
+                
+                # Handle custom form
+                final_form = form_val
+                if form_val == "Andere:":
+                    custom_val = st.session_state.get(custom_form_key, "")
+                    final_form = custom_val if custom_val else form_val
+                
+                prescription_data = {
+                    "name": supplement_name,
+                    "Dauer": f"{dauer_val} M",
+                    "Darreichungsform": final_form,
+                    "Dosierung": dosage_val,
+                    "Nüchtern": st.session_state.get(nue_key, ""),
+                    "Morgens": st.session_state.get(morg_key, ""),
+                    "Mittags": st.session_state.get(mitt_key, ""),
+                    "Abends": st.session_state.get(abend_key, ""),
+                    "Nachts": st.session_state.get(nacht_key, ""),
+                    "Kommentar": st.session_state.get(comment_key, "")
+                }
+                
+                nem_prescriptions.append(prescription_data)
+            
+            # Get data from other tabs (already updated in session state)
             therapieplan_data = st.session_state.therapieplan_data
             ernaehrung_data = st.session_state.ernaehrung_data
             infusion_data = st.session_state.infusion_data
+            
+            # Update session state with collected NEM data
+            st.session_state.nem_prescriptions = nem_prescriptions
             
             # Save all data
             if save_patient_data(conn, patient, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data):
@@ -1701,20 +1749,6 @@ def main():
                 st.session_state.show_save_success = True
                 st.session_state.last_loaded_patient = patient["patient"]
                 st.rerun()
-
-    # Auto-download PDF section (appears at the end if any PDF was generated)
-    if st.session_state.get("auto_download_pdf"):
-        pdf_data = st.session_state.auto_download_pdf
-        # Create a download button that will appear
-        st.download_button(
-            "PDF herunterladen",
-            data=pdf_data["data"],
-            file_name=pdf_data["filename"],
-            mime=pdf_data["mime"],
-            key="auto_download"
-        )
-        # Clear after download is offered
-        st.session_state.auto_download_pdf = None
 
 if __name__ == "__main__":
     main()
