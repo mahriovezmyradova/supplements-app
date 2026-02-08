@@ -1,65 +1,184 @@
-id,name
-S001,Magnesiumbisglycinat
-S002,Magnesiumthreonat
-S003,Liposomales Magnesium 200mg
-S004,Vitamin C Pulver/Na Ascorbatpulver
-S005,Vitamin C 1000mg
-S006,Ascorbyl Palmitat/liposomales Vit. C
-S007,L-Carnitin (Carnipure)
-S008,L-Carnitin (Carnipure) Lösung
-S009,Kapselmischung nach UR V.9 Arnika
-S010,Multi Mischung Vit. Min.
-S011,Benfothiamin
-S012,Vitamin B6 – P5P aktiviert (mit Zink)
-S013,Mangan 10mg
-S014,Nattokinase 100mg
-S015,Q10 400mg
-S016,Selen 300 (100Stk) nüchtern Arnika
-S017,Selen 200 nüchtern Na-Selenit
-S018,Vitamin E Kap. __00 IU  E8 Tocotrienol
-S019,Polyphenolkapsel Arnika
-S020,Vitamin D3 __.000 IE __Tage a __
-S021,Vitamin K2 1000mg
-S022,Calcium _____ mg
-S023,OPC
-S024,Lugolsche (Jod) 5% Tropfen
-S025,Kelp Tabl mit Jod
-S026,Zink 25mg  (Zink-Glycinat)
-S027,Eisenpräparat  __mg
-S028,R-Alpha Liponsäure 400mg
-S029,Lactoferrin
-S030,Quercetin 500mg
-S031,Enzyme – Multienzym / Superenzym
-S032,Sulbutiamin
-S033,Spermiding
-S034,Berberine (plaquefrei)
-S035,Benfotiamine (B1 fürs Nervensystem)
-S036,Huperzine
-S037,Kalium
-S038,Lithiumorotat 1mg
-S039,Lithiumorotat 5mg
-S040,Omega 3 Öl 1 EL=2g EPA/DHA,mg
-S041,Alpha GPC
-S042,Phosphatidylserin / Phosphatidylcholin
-S043,NMN 500mg
-S044,NAD+ liposomal 500mg
-S045,Citicoline
-S046,TransResveratol 1000mg
-S047,Astaxanthin 18mg
-S048,Lutein 40 mg
-S050,Piracetam memory
-S051,Aniracetam learning
-S052,MAP (Aminosäuremischung)
-S053,Proteinshake 2 ML in Wasser/Nussmi.
-S054,Tyrosin 500mg
-S055,5HTP 200mg
-S056,5HTP 300mg
-S057,5HTP 600mg
-S058,SAMe 400mg
-S059,Phenylalanin 500mg
-S060,GABA 1g
-S061, Tryptophan 1000mg
-S062, Tryptophan 500mg
-S063, Lysin
-S064, Prolin
-S065, Arginin Pulver 1g Kapseln
+id,name,category
+CAT1,CATEGORY: Basis,1
+S001,Magnesiumbisglycinat-Pulver,1
+S002,Magnesiumthreonat-Pulver,1
+S003,liposomales Magnesium Kapseln 200mg,1
+S004,Vitamin C Pulver / Na Ascorbatpulver,1
+S005,Vitamin C Kapseln 1000mg,1
+S006,Ascorbyl Palmitat / liposomales Vitamin C,1
+S007,L-Carnitin (Carnipure) Kapseln,1
+S008,L-Carnitin (Carnipure) Lösung,1
+S009,Kapselmischung nach UR V.9 Arnika,1
+S010,Multi Mischung Vitamine & Mineralien,1
+S011,Benfothiamin,1
+S012,Vitamin B6 – P5P aktiviert (mit Zink),1
+S013,Mangan 10mg,1
+S014,Nattokinase 100mg Kapseln,1
+S015,Q10 Kapseln 400mg,1
+S016,Selen 300 (100 Stk) nüchtern Arnika,1
+S017,Selen 200 nüchtern Na-Selenit,1
+S018,Vitamin E Kapseln 800 IU E8 Tocotrienol,1
+S019,Polyphenol Kapseln Arnika,1
+S020,Vitamin D3,1
+S021,Vitamin K2 1000µg,1
+S022,Calcium,1
+S023,OPC Kapseln,1
+S024,Lugolsche Lösung (Jod) 5% Tropfen,1
+S025,Kelp Tabletten mit Jod,1
+S026,Zink 25mg (Zink-Glycinat),1
+S027,Eisenpräparat,1
+S028,R-Alpha-Liponsäure 400mg,1
+S029,Lactoferrin Kapseln,1
+S030,Quercetin 500mg,1
+S031,Enzyme Multienzym / Superenzym,1
+S032,Sulbutiamin,1
+S033,Spermidin,1
+S034,Berberin (plaquefrei),1
+S035,Benfotiamin (Vitamin B1 für das Nervensystem),1
+S036,Huperzin,1
+S037,Kalium,1
+S038,Lithiumorotat 1mg,1
+S039,Lithiumorotat 5mg,1
+CAT2,CATEGORY: Gehirn / Gedächtnis,2
+S040,Omega-3-Öl 1 EL = 2g EPA/DHA,2
+S041,Alpha-GPC Kapseln,2
+S042,Phosphatidylserin / Phosphatidylcholin,2
+S043,NMN Kapseln 500mg,2
+S044,NAD+ liposomal 500mg,2
+S045,Citicolin Kapseln,2
+S046,Trans-Resveratrol Kapseln 1000mg,2
+S047,Astaxanthin 18mg Kapseln,2
+S048,Lutein 40mg Kapseln,2
+S049,Piracetam (Memory),2
+S050,Aniracetam (Learning),2
+CAT3,CATEGORY: Aminosäuren,3
+S051,MAP Pulver (Aminosäuremischung),3
+S052,Proteinshake 2 Messlöffel in Wasser / Nussmilch,3
+S053,Tyrosin Kapseln 500mg,3
+S054,5-HTP 200mg,3
+S055,5-HTP 300mg,3
+S056,5-HTP 600mg,3
+S057,SAMe 400mg,3
+S058,Phenylalanin 500mg,3
+S059,GABA 1g,3
+S060,Tryptophan 500mg,3
+S061,Tryptophan 1000mg,3
+S062,Lysin Pulver,3
+S063,Prolin Pulver,3
+S064,Arginin Pulver,3
+S065,Arginin Kapseln 1g,3
+S066,Citrullin Kapseln,3
+S067,Ornithin Kapseln,3
+S068,Histidin Kapseln,3
+S069,BCAA Kapseln 1g,3
+S070,Glycin Kapseln 1000mg,3
+S071,Taurin Pulver,3
+S072,Methionin 500mg,3
+S073,Kreatin Monohydrat Pulver,3
+S074,Carnosin Kapseln 500mg,3
+CAT4,CATEGORY: Entgiftung oral,4
+S075,MSM 1000mg,4
+S076,liposomales Glutathion,4
+S077,Zeolith (nüchtern),4
+S078,DMSA Kapseln 100mg,4
+S079,Calcium-EDTA Kapseln 750mg,4
+S080,Chlorella Algen,4
+S081,NAC 600mg,4
+S082,NAC 800mg,4
+S083,TUDCA 500mg,4
+S084,Lymphdiaral / Lymphomyosot Tropfen,4
+S085,Ceres Geranium robertianum Urtinktur,4
+S086,Mineralien- und Spurenelemente Mischung,4
+S087,NACET 100mg Kapseln,4
+S088,NACET Pulver,4
+S089,Bromelain 750mg Kapseln nüchtern,4
+S090,Sulforaphan 35mg (vor dem Essen),4
+S091,Tamarindenextrakt,4
+S092,Chelidonium,4
+S093,Hyperikum,4
+S094,Colostrum (freeze-dried),4
+CAT5,CATEGORY: Darmsanierung nach Paracelsus Kl.,5
+S095,Symbiolact Pur,5
+S096,Probio-Cult AKK1,5
+S097,Glutamin 1g Kapseln,5
+S098,Mucosa Compositum Tabletten,5
+S099,Basenpulver (z. B. Dr. Jacobs),5
+S100,Vermox 3 Tage, nach 14 Tagen wiederholen,5
+CAT6,CATEGORY: Leberdetox nach Paracelsus Kl.,6
+S101,Okoubaka Tropfen,6
+S102,Bittersalz (kein Glaubersalz),6
+S103,Bile Acid Factors,6
+S104,Mariendistel / Carduus Marianus / Taraxacum,6
+S105,Bitterliebe Kapseln,6
+CAT7,CATEGORY: Schlafen,7
+S106,Baldrian / Hopfen Kapseln,7
+S107,Melatonin,7
+CAT8,CATEGORY: Gelenke / Bindegewebe,8
+S108,Glucosamin 10g,8
+S109,Chondroitin 10g,8
+S110,Silizium G7 flüssig,8
+S111,Kollagenpulver,8
+S112,Isagenix SuperKollagen,8
+CAT9,CATEGORY: Infektionsbehandlung,9
+S113,Disulfiram nach Schema,9
+S114,Quentakehl Kapseln,9
+S115,Lysin 1g Kapseln,9
+S116,Weihrauch Kapseln (Boswelliasäure),9
+S117,Curcuma Gelkapseln,9
+S118,CurcumaXan Spray Arnika,9
+S119,Helicobacter-Therapie (Pylopass Forte),9
+S120,Symbiolact comp. nüchtern,9
+S121,Artemisia annua Kapseln 600mg,9
+S122,Artemisia annua Pulver,9
+S123,Amantadin 100mg (spätestens 15 Uhr),9
+S124,Hydroxychloroquin (HCQ) 200mg,9
+S125,Ivermectin 0,4–0,5mg/kg/Tag,9
+S126,Schwarzkümmelöl Kapseln,9
+S127,Astragalus Kapseln,9
+S128,Andrographis Kapseln 400mg,9
+S129,Andrographis Kapseln 500mg,9
+S130,AHCC 500mg Kapseln,9
+CAT10,CATEGORY: Hormone,10
+S131,Östradiol 0,03%,10
+S132,Östradiol 0,06%,10
+S133,Progesteroncreme 3%,10
+S134,Progesteroncreme 10%,10
+S135,DHEA 2% Creme,10
+S136,Estradiol 0,04% / Estriol 1,6% / Testosteron 0,2%,10
+S137,DHEA 5% Gel,10
+S138,Testosteron 10% Gel,10
+S139,Testosteron Gel 8mg (Frauen),10
+S140,Testosteron Gel 50mg,10
+S141,Testosteron Gel 100mg,10
+S142,Testosteron Gel 150mg,10
+S143,Progesteron Kapseln 25mg (Männer),10
+S144,DHEA Kapseln 5mg,10
+S145,DHEA Kapseln 10mg,10
+S146,DHEA Kapseln 25mg,10
+S147,DHEA Kapseln 50mg,10
+S148,Pregnenolon 10mg,10
+S149,Pregnenolon 30mg,10
+S150,Pregnenolon 50mg,10
+S151,Pregnenolon 100mg,10
+S152,Phytocortal 100ml,10
+S153,Ceres Ribes nigrum Fol. Urtinktur,10
+S154,Lion's Mane Mushroom Extrakt 500mg,10
+S155,LDN 1mg,10
+S156,LDN 1,5mg,10
+S157,LDN 4mg,10
+S158,LDN 4,5mg,10
+CAT11,CATEGORY: Biologische Therapie,11
+S159,Ceres Solidago comp.,11
+CAT12,CATEGORY: Sonstiges,12
+S160,Pro Human Probiotikum,12
+S161,Thymusextrakt,12
+S162,Nierenextrakt,12
+S163,Leberextrakt,12
+S164,Adrenal Organzellextrakt,12
+S165,Frischpflanzensaft,12
+S166,Löwenzahn / Sellerie / Bärlauch,12
+S167,Kaktusfeige (Hautfeuchtigkeit),12
+S168,Kiefernadeltee 2 Tassen täglich,12
+S169,Weidenröschen (Fireweed),12
+S170,SuperPatches einzeln,12
+S171,SuperPatches Packung 28 Stück,12
