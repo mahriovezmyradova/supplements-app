@@ -197,7 +197,7 @@ def complete_reset():
         ("S092", "Colostrum (freeze-dried)", 4),
         
         # Category 5: Darmsanierung
-        ("CAT5", "CATEGORY: Darmsanierung nach Paracelsus Kl.", 5),
+        ("CAT5", "CATEGORY: Darmsanierung nach Revita Kl.", 5),
         ("S093", "Symbiolact Pur", 5),
         ("S094", "Probio-Cult AKK1", 5),
         ("S095", "Glutamin 1g", 5),
@@ -206,7 +206,7 @@ def complete_reset():
         ("S098", "Vermox", 5),
         
         # Category 6: Leberdetox
-        ("CAT6", "CATEGORY: Leberdetox nach Paracelsus Kl.", 6),
+        ("CAT6", "CATEGORY: Leberdetox nach Revita Kl.", 6),
         ("S099", "Okoubaka", 6),
         ("S100", "Bittersalz", 6),
         ("S101", "Bile Acid Factors", 6),
