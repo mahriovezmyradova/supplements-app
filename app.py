@@ -752,6 +752,7 @@ def patient_inputs(conn):
         "Geben Sie den Namen ein und drücken Sie die Eingabetaste, um Vorschläge zu suchen.",
         value=display_value,
         placeholder="Vor- und Nachname",
+        key="patient_name_input"
     )
 
     # --------------------------------------------------
@@ -834,6 +835,11 @@ def patient_inputs(conn):
     default_tw_besprochen = pdata.get("tw_besprochen", "Ja")
     default_allergie = pdata.get("allergie", "")
     default_diagnosen = pdata.get("diagnosen", "")
+    
+    # Kontrolltermine defaults
+    default_kontrolltermin_4 = pdata.get("kontrolltermin_4", False)
+    default_kontrolltermin_12 = pdata.get("kontrolltermin_12", False)
+    default_kontrolltermin_kommentar = pdata.get("kontrolltermin_kommentar", "")
 
     # --------------------------------------------------
     # Layout
@@ -847,25 +853,28 @@ def patient_inputs(conn):
             min_value=date(1900, 1, 1),
             max_value=date.today(),
             format="DD.MM.YYYY",
+            key="geburtsdatum_input"
         )
 
     with c2:
         geschlecht = st.radio(
             "Geschlecht", ["M", "W"], horizontal=True,
-            index=0 if default_geschlecht == "M" else 1
+            index=0 if default_geschlecht == "M" else 1,
+            key="geschlecht_input"
         )
 
     with c3:
-        groesse = st.number_input("Grösse (cm)", min_value=0, value=default_groesse)
+        groesse = st.number_input("Grösse (cm)", min_value=0, value=default_groesse, key="groesse_input")
 
     with c4:
-        gewicht = st.number_input("Gewicht (kg)", min_value=0, value=default_gewicht)
+        gewicht = st.number_input("Gewicht (kg)", min_value=0, value=default_gewicht, key="gewicht_input")
 
     with c5:
         therapiebeginn = st.date_input(
             "Therapiebeginn",
             value=default_therapiebeginn,
             format="DD.MM.YYYY",
+            key="therapiebeginn_input"
         )
 
     with c6:
@@ -873,6 +882,7 @@ def patient_inputs(conn):
             "Dauer (Monate)",
             list(range(1, 13)),
             index=default_dauer_value - 1,
+            key="dauer_input"
         )
 
     with c7:
@@ -881,19 +891,35 @@ def patient_inputs(conn):
             ["Ja", "Nein"],
             horizontal=True,
             index=0 if default_tw_besprochen == "Ja" else 1,
+            key="tw_besprochen_input"
         )
 
-    bekannte_allergie = st.text_input("Bekannte Allergie?", value=default_allergie)
+    bekannte_allergie = st.text_input("Bekannte Allergie?", value=default_allergie, key="allergie_input")
 
     diagnosen = st.text_area(
         "Diagnosen",
         value=default_diagnosen,
         height=100,
         placeholder="Relevante Diagnosen...",
+        key="diagnosen_input"
     )
 
     # --------------------------------------------------
-    # RETURN (UNCHANGED)
+    # Kontrolltermine (now available for all tabs)
+    # --------------------------------------------------
+    st.markdown("---")
+    st.markdown("#### Kontrolltermine")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        kontrolltermin_4 = st.checkbox("4 Wochen", value=default_kontrolltermin_4, key="kontrolltermin_4_input")
+    with col2:
+        kontrolltermin_12 = st.checkbox("12 Wochen", value=default_kontrolltermin_12, key="kontrolltermin_12_input")
+    
+    kontrolltermin_kommentar = st.text_input("Kommentar:", value=default_kontrolltermin_kommentar, key="kontrolltermin_kommentar_input")
+
+    # --------------------------------------------------
+    # RETURN (with Kontrolltermine included)
     # --------------------------------------------------
     data = {
         "patient": patient_name_input,
@@ -906,6 +932,10 @@ def patient_inputs(conn):
         "tw_besprochen": tw_besprochen,
         "allergie": bekannte_allergie,
         "diagnosen": diagnosen,
+        # Kontrolltermine
+        "kontrolltermin_4": kontrolltermin_4,
+        "kontrolltermin_12": kontrolltermin_12,
+        "kontrolltermin_kommentar": kontrolltermin_kommentar,
     }
 
     return data
@@ -1010,6 +1040,31 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
     pdf.multi_cell(0, 5, diagnosen, 0, "L")
     pdf.ln(3)
 
+    # Kontrolltermine
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 6, "Kontrolltermine:", 0, 1)
+    pdf.set_font("Helvetica", "", 10)
+    
+    kontrolltermine_text = ""
+    if patient.get("kontrolltermin_4", False):
+        kontrolltermine_text += "- 4 Wochen\n"
+    if patient.get("kontrolltermin_12", False):
+        kontrolltermine_text += "- 12 Wochen\n"
+    
+    kontrolltermin_kommentar = clean_text(patient.get("kontrolltermin_kommentar", ""))
+    if kontrolltermin_kommentar:
+        if kontrolltermine_text:
+            kontrolltermine_text += f"Kommentar: {kontrolltermin_kommentar}"
+        else:
+            kontrolltermine_text = f"Kommentar: {kontrolltermin_kommentar}"
+    
+    if not kontrolltermine_text:
+        kontrolltermine_text = "- Keine Angaben"
+    
+    pdf.multi_cell(0, 5, kontrolltermine_text, 0, "L")
+    pdf.ln(3)
+
     # Content based on tab
     if tab_name == "NEM" and isinstance(supplements, list):
         # Supplements Table
@@ -1081,7 +1136,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         label_mapping = {
             # Diagnostik & Überprüfung
             "zaehne": "Überprüfung der Zähne/Kieferknochen mittels OPG (Panoramaaufnahme mit lachendem Gebiss) / DVT",
-            "zaehne_zu_pruefen": "Zähne zu überprüfen",
+            "zaehne_zu_pruefen": "Zähne zu überprüfen (OPG/DVT)",
             "darm_biofilm": "Darm - Biofilmentfernung nach www.regenbogenkreis.de (Express-Darmkur 4 Tageskur)",
             "darmsanierung": "Darmsanierung nach Paracelsus Klinik (Rezept von Praxis)",
             "darmsanierung_dauer": "Darmsanierung Dauer",
@@ -1092,29 +1147,46 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             "nierenprogramm": "Nierenprogramm nach Dr. Clark – 4 Wochen – bitte bei www.drclarkcenter.de beziehen",
             "infektion_bakt": "Infektionsbehandlung für Bakterien (Borr./Helicob.)",
             "infektion_virus": "Infektionsbehandlung für Viren (EBV, HPV, Herpes, Corona)",
-            "ausleitung_inf": "Ausleitung von Schwermetallen/Umweltgiften/PostVacSyndrom mit Infusionen",
-            "ausleitung_oral": "Ausleitung von Schwermetallen/Umweltgiften/PostVacSyndrom oral",
-            "mikronaehrstoffe": "Einnahme von Mikronährstoffen (NEM-Verordnung)",
-            "infusionsbehandlung": "Infusionsbehandlung",
+            "ausleitung_inf": "Schwermetallausleitung Infusion",
+            "ausleitung_oral": "Schwermetallausleitung oral",
+            "mikronaehrstoffe": "Einnahme Mikronährstoffen (NEM-Verordnung) (siehe separate PDF)",
+            "infusionsbehandlung": "Infusionstherapie (siehe separate PDF)",
             "neuraltherapie": "Neuraltherapie",
             "eigenblut": "Eigenbluttherapie",
-            "medikamente": "Medikamentenverordnung",
-            "bio_isopath": "Biologische / Isopathische Therapie",
-            "timewaver_analyse": "Timewaver Analyse",
-            "timewaver_freq": "Timewaver Frequency Behandlung",
-            "weitere_labor": "Weitere Labordiagnostik (z. B. IMD, Dedimed, MMD, NextGen Onco)",
-            "ernaehrung": "Ernährungsänderung und -beratung",
-            "hypnose": "Hypnosetherapie",
+            "medikamente": "Medikamentenverordnung - Rezept für",
+            "bio_isopath": "Biologische Isopathische Therapie",
+            "timewaver_freq": "TimeWaver Frequency Behandlung",
+            "ernaehrung": "Ernährungsberatung",
+            "hypnose": "Hypnosetherapie (Noreen Martin Miro)",
             "yager": "Yagertherapie",
-            "energetisch": "Energetische Behandlung (Marie / Noreen / Martin / KU / Sandra)",
+            "aethetisch": "Ästhetische Behandlung (Botox/PRP/Fäden/Hyaloron)",
+            "ozontherapie": "Ozontherapie",
+            "medikamente_text": "Medikamentenverordnung - Rezept Details",
+            "akupunktur": "Akupunktur",
+            "homoeopathie": "Homöopathie (Anna)",
+            "bioresonanz": "Bioresonanz (Anna)",
+            "leberreinigung": "Leberreinigung",
+            "ketogene": "Ketogene Ernährung",
+            "naehrstoff_ausgleich": "Nährstoffmängel ausgleichen",
+            "therapie_sonstiges": "Sonstiges (Therapie)",
+            "magenband": "Magenband",
+            "energie_behandlungen": "Energiebehandlungen bei Marie",
+            "zwischengespraech_4": "Zwischengespräch nach 4 Wochen (1/2h)",
+            "zwischengespraech_8": "Zwischengespräch nach weiteren 8 Wochen (1/2h)",
+            "lab_imd": "IMD",
+            "lab_mmd": "MMD",
+            "lab_nextgen": "NextGen Onco",
+            "lab_sonstiges": "Sonstiges (Labordiagnostik)",
+            "analyse_bewegungsapparat": "Analyse Bewegungsapparat (Martin)",
+            "schwermetalltest": "Schwermetalltest mit DMSA und Ca EDTA",
             
             # Therapieformen
-            "darmsanierung_ern": "Darmsanierung nach Paracelsus Klinik",
+            "darmsanierung_ern": "Darmsanierung",
             "leberdetox_ern": "Leberdetox",
-            "lowcarb": "Low Carb Ernährung (viel Protein und viel gesundes Fett/Öl)",
+            "lowcarb": "Low Carb Ernährung",
             "proteinmenge": "Proteinmenge",
-            "fasten": "Intermittierendes Fasten / 4-tägiges Fasten",
-            "krebsdiaet": "Krebs-Diät nach Dr. Coy / Dr. Strunz / Budwig",
+            "fasten": "Intermittierendes Fasten",
+            "krebsdiaet": "Krebs Diät nach Dr. Coy/Dr. Strunz/angelehnt Budwig",
             "keto": "Ketogene Ernährung",
             "oelziehen": "Ölziehen mit Kokosöl (2x10 Min. nach dem Zähneputzen)",
             "detox_vacc": "Detox vacc Protokoll (3–12 Monate, gelb markiert)",
@@ -1122,10 +1194,10 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             "salz": "Gut gesalzene Kost mit Himalaya- oder Meersalz (fluoridfrei)",
             "phosphat": "Phosphatreiche Nahrungsmittel",
             "kalium": "Kaliumreiche Nahrungsmittel",
-            "basisch": "Basische Ernährung (pflanzlich)",
+            "basisch": "Basische Ernährung",
             "fluoridfrei": "Fluoridfreies Leben (Zahnpasta, Salz etc.)",
             "wasserfilter": "Wasserfilter (Umkehrosmose oder Tischfilter, z. B. Maunaway)",
-            "atem": "Atemtherapie (z. B. Wim Hof oder Yoga)",
+            "atem": "Atemtherapie",
             "beratung": "Ernährungsberatung",
             "ruecken": "Rückentraining (z. B. Kieser Training)",
             "cardio": "Cardio",
@@ -1137,20 +1209,21 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         # Define which keys belong to which section in Therapieplan tab
         section_keys = {
             "Diagnostik & Überprüfung": [
-                "zaehne", "zaehne_zu_pruefen", "darm_biofilm", "darmsanierung", 
-                "darmsanierung_dauer", "hydrocolon", "parasiten", "parasiten_bio",
-                "leberdetox", "nierenprogramm", "infektion_bakt", "infektion_virus",
-                "ausleitung_inf", "ausleitung_oral", "mikronaehrstoffe", "infusionsbehandlung",
-                "neuraltherapie", "eigenblut", "medikamente", "bio_isopath",
-                "timewaver_analyse", "timewaver_freq", "weitere_labor", "ernaehrung",
-                "hypnose", "yager", "energetisch"
+                "zaehne", "zaehne_zu_pruefen", "lab_imd", "lab_mmd", "lab_nextgen", 
+                "lab_sonstiges", "analyse_bewegungsapparat", "schwermetalltest",
+                "darm_biofilm", "darmsanierung", "darmsanierung_dauer", "hydrocolon", 
+                "parasiten", "parasiten_bio", "leberdetox", "nierenprogramm", 
+                "infektion_bakt", "infektion_virus", "ausleitung_inf", "ausleitung_oral"
             ],
             "Therapieformen": [
-                "darmsanierung_ern", "leberdetox_ern", "lowcarb", "proteinmenge",
-                "fasten", "krebsdiaet", "keto", "oelziehen", "detox_vacc",
-                "abnehmen", "salz", "phosphat", "kalium", "basisch", "fluoridfrei",
-                "wasserfilter", "atem", "beratung", "ruecken", "cardio",
-                "ausdauer", "trampolin", "barre"
+                "mikronaehrstoffe", "infusionsbehandlung", "neuraltherapie", "eigenblut",
+                "aethetisch", "ozontherapie", "medikamente", "medikamente_text", 
+                "timewaver_freq", "bio_isopath", "akupunktur", "homoeopathie", 
+                "bioresonanz", "hypnose", "yager", "atemtherapie", "bewegung", 
+                "ernaehrung", "darmsanierung_ern", "leberreinigung", "lowcarb", 
+                "fasten", "krebsdiaet", "ketogene", "basisch", "naehrstoff_ausgleich",
+                "therapie_sonstiges", "magenband", "energie_behandlungen",
+                "zwischengespraech_4", "zwischengespraech_8"
             ]
         }
         
@@ -1198,7 +1271,28 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         
         # Define mapping from keys to human-readable labels for Infusionstherapie tab
         label_mapping = {
-            # Infusionstherapie
+            # RevitaClinic Infusionen
+            "revita_immune": "RevitaImmune",
+            "revita_immune_plus": "RevitaImmunePlus",
+            "revita_heal": "Revita Heal (2x)",
+            "revita_bludder": "RevitaBludder",
+            "revita_ferro": "RevitaFerro",
+            "revita_energy": "RevitaEnergyBoost",
+            "revita_focus": "RevitaFocus",
+            "revita_nad": "RevitaNAD+",
+            "revita_relax": "RevitaRelax",
+            "revita_fit": "RevitaFit",
+            "revita_hangover": "RevitaHangover",
+            "revita_beauty": "RevitaBeauty",
+            "revita_antiaging": "RevitaAnti-Aging",
+            "revita_detox": "RevitaDetox",
+            "revita_chelate": "RevitaChelate",
+            "revita_liver": "RevitaLiver",
+            "revita_leakygut": "RevitaLeaky-gut",
+            "revita_infection": "RevitaInfection",
+            "revita_joint": "RevitaJoint",
+            
+            # Standard Infusionen
             "mito_energy": "Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)",
             "schwermetalltest": "Schwermetalltest mit DMSA und Ca EDTA",
             "procain_basen": "Procain Baseninfusion mit Magnesium",
@@ -1220,18 +1314,37 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             "aminoinfusion": "Aminoinfusion leaky gut (5–10)",
             "relax_infusion": "Relax Infusion",
             "eisen_infusion": "Eisen Infusion (Ferinject) mg / Anzahl",
-            "vitamin_c": "Vitamin C Hochdosis (g)",
-            "zusaetze": "Zusätze auswählen"
+            "vitamin_c": "Hochdosis Vitamin C (g)",
+            "vitamin_b_komplex": "Vit. B-Komplex",
+            "vitamin_d": "Vit. D",
+            "vitamin_b6_b12_folsaeure": "Vit. B6/B12/Folsäure",
+            "vitamin_b3": "Vit. B3",
+            "zusaetze": "Zusätze auswählen",
+            "wochen_haeufigkeit": "Wie oft",
+            "therapie_beginn": "Therapie Beginn",
+            "therapie_ende": "Therapie Ende",
+            "therapie_dauer": "Dauer (Wochen/Monate)"
         }
         
         # Define all infusion keys for a single section
         infusion_keys = [
+            # RevitaClinic Infusionen
+            "revita_immune", "revita_immune_plus", "revita_heal", "revita_bludder",
+            "revita_ferro", "revita_energy", "revita_focus", "revita_nad",
+            "revita_relax", "revita_fit", "revita_hangover", "revita_beauty",
+            "revita_antiaging", "revita_detox", "revita_chelate", "revita_liver",
+            "revita_leakygut", "revita_infection", "revita_joint",
+            
+            # Standard Infusionen
             "mito_energy", "schwermetalltest", "procain_basen", "procain_2percent",
             "artemisinin", "perioperative", "detox_standard", "detox_maxi",
             "aufbauinfusion", "infektions_infusion", "immun_booster", "oxyvenierung",
             "energetisierungsinfusion", "naehrstoffinfusion", "anti_aging",
             "nerven_aufbau", "leberentgiftung", "anti_oxidantien", "aminoinfusion",
-            "relax_infusion", "eisen_infusion", "vitamin_c", "zusaetze"
+            "relax_infusion", "eisen_infusion", "vitamin_c", "vitamin_b_komplex",
+            "vitamin_d", "vitamin_b6_b12_folsaeure", "vitamin_b3",
+            "wochen_haeufigkeit", "therapie_beginn", "therapie_ende", "therapie_dauer",
+            "zusaetze"
         ]
         
         # Display Infusionen section
@@ -1311,12 +1424,12 @@ def main():
     # Save and Delete buttons at the top
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        save_button = st.button("Alle Daten speichern", use_container_width=True, type="primary")
+        save_button = st.button("Alle Daten speichern", use_container_width=True, type="primary", key="save_button")
     with col2:
         # Delete button - only show if patient exists in database
         patient_names = fetch_patient_names(conn)['patient_name'].tolist()
         if patient["patient"] and patient["patient"] in patient_names:
-            if st.button("Patient löschen", use_container_width=True, type="secondary"):
+            if st.button("Patient löschen", use_container_width=True, type="secondary", key="delete_button"):
                 st.session_state.show_delete_confirmation = True
     
     # Show save success message if set
@@ -1370,7 +1483,6 @@ def main():
     ernaehrung_data = {}
     infusion_data = {}
 
-    # TAB 1: Combined THERAPIEPLAN (Diagnostik & Überprüfung, Ernährung, Infusion)
     with tabs[0]:
         therapieplan_data = st.session_state.therapieplan_data
         ernaehrung_data = st.session_state.ernaehrung_data
@@ -1398,284 +1510,311 @@ def main():
         col1, col2 = st.columns(2)
         with col1:
             zaehne = st.checkbox("Überprüfung der Zähne/Kieferknochen mittels OPG (Panoramaaufnahme mit lachendem Gebiss) / DVT", 
-                            value=therapieplan_data.get("zaehne", False))
+                            value=therapieplan_data.get("zaehne", False),
+                            key="zaehne_checkbox")
         with col2:
-            zaehne_zu_pruefen = st.text_input("Zähne zu überprüfen:", 
-                                            value=therapieplan_data.get("zaehne_zu_pruefen", ""))
+            zaehne_zu_pruefen = st.text_input("Zähne zu überprüfen (OPG/DVT):", 
+                                            value=therapieplan_data.get("zaehne_zu_pruefen", ""),
+                                            key="zaehne_zu_pruefen_input")
+
+        # Sub-section: Labor & Diagnostik
+        st.markdown("**Labor & Diagnostik**")
+        col1, col2 = st.columns(2)
+        with col1:
+            lab_imd = st.text_input("IMD:", value=therapieplan_data.get("lab_imd", ""), key="lab_imd_input")
+        with col2:
+            lab_mmd = st.text_input("MMD:", value=therapieplan_data.get("lab_mmd", ""), key="lab_mmd_input")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            lab_nextgen = st.text_input("NextGen Onco:", value=therapieplan_data.get("lab_nextgen", ""), key="lab_nextgen_input")
+        with col2:
+            lab_sonstiges = st.text_input("Sonstiges:", value=therapieplan_data.get("lab_sonstiges", ""), key="lab_sonstiges_input")
+
+        # Sub-section: Bewegungsapparat & Schwermetalle
+        st.markdown("**Bewegungsapparat & Schwermetalle**")
+        col1, col2 = st.columns(2)
+        with col1:
+            analyse_bewegungsapparat = st.checkbox("Analyse Bewegungsapparat (Martin)", 
+                                                value=therapieplan_data.get("analyse_bewegungsapparat", False),
+                                                key="analyse_bewegungsapparat_checkbox")
+        with col2:
+            schwermetalltest = st.checkbox("Schwermetalltest mit DMSA und Ca EDTA", 
+                                        value=therapieplan_data.get("schwermetalltest", False),
+                                        key="schwermetalltest_checkbox")
+
+        st.markdown("---")
 
         # Sub-section: Darm & Entgiftung
         st.markdown("**Darm & Entgiftung**")
         col1, col2 = st.columns(2)
         with col1:
             darm_biofilm = st.checkbox("Darm - Biofilmentfernung nach www.regenbogenkreis.de (Express-Darmkur 4 Tageskur)", 
-                                    value=therapieplan_data.get("darm_biofilm", False))
+                                    value=therapieplan_data.get("darm_biofilm", False),
+                                    key="darm_biofilm_checkbox")
             darmsanierung = st.checkbox("Darmsanierung nach Paracelsus Klinik (Rezept von Praxis)", 
-                                    value=therapieplan_data.get("darmsanierung", False))
+                                    value=therapieplan_data.get("darmsanierung", False),
+                                    key="darmsanierung_checkbox")
             darmsanierung_dauer = st.multiselect("Darmsanierung Dauer:", ["4 Wo", "6 Wo", "8 Wo"], 
-                                            default=therapieplan_data.get("darmsanierung_dauer", []))
-            hydrocolon = st.checkbox("mit Hydrocolon (Darmspülung) 2x insgesamt, Abstand 14 Tage mit Rekolonisierungs-Shot", 
-                                value=therapieplan_data.get("hydrocolon", False))
-            parasiten = st.checkbox("Parasitenbehandlung mit Vermox (3 Tage)", 
-                                value=therapieplan_data.get("parasiten", False))
+                                            default=therapieplan_data.get("darmsanierung_dauer", []),
+                                            key="darmsanierung_dauer_select")
         with col2:
+            hydrocolon = st.checkbox("mit Hydrocolon (Darmspülung) 2x insgesamt, Abstand 14 Tage mit Rekolonisierungs-Shot", 
+                                value=therapieplan_data.get("hydrocolon", False),
+                                key="hydrocolon_checkbox")
+            parasiten = st.checkbox("Parasitenbehandlung mit Vermox (3 Tage)", 
+                                value=therapieplan_data.get("parasiten", False),
+                                key="parasiten_checkbox")
             parasiten_bio = st.checkbox("Biologisches Parasitenprogramm (z. B. www.drclarkcenter.de)", 
-                                    value=therapieplan_data.get("parasiten_bio", False))
+                                    value=therapieplan_data.get("parasiten_bio", False),
+                                    key="parasiten_bio_checkbox")
+        
+        col1, col2 = st.columns(2)
+        with col1:
             leberdetox = st.checkbox("Leberdetox Behandlung nach Paracelsus Klinik (2-Tageskur, 4–5x alle 4–6 Wochen)", 
-                                value=therapieplan_data.get("leberdetox", False))
+                                value=therapieplan_data.get("leberdetox", False),
+                                key="leberdetox_checkbox")
+        with col2:
             nierenprogramm = st.checkbox("Nierenprogramm nach Dr. Clark – 4 Wochen – bitte bei www.drclarkcenter.de beziehen", 
-                                        value=therapieplan_data.get("nierenprogramm", False))
+                                        value=therapieplan_data.get("nierenprogramm", False),
+                                        key="nierenprogramm_checkbox")
 
         # Sub-section: Infektionen & Ausleitung
         st.markdown("**Infektionen & Ausleitung**")
         col1, col2 = st.columns(2)
         with col1:
             infektion_bakt = st.text_input("Infektionsbehandlung für Bakterien (Borr./Helicob.):", 
-                                        value=therapieplan_data.get("infektion_bakt", ""))
+                                        value=therapieplan_data.get("infektion_bakt", ""),
+                                        key="infektion_bakt_input")
         with col2:
             infektion_virus = st.text_input("Infektionsbehandlung für Viren (EBV, HPV, Herpes, Corona):", 
-                                        value=therapieplan_data.get("infektion_virus", ""))
+                                        value=therapieplan_data.get("infektion_virus", ""),
+                                        key="infektion_virus_input")
         
         col1, col2 = st.columns(2)
         with col1:
-            ausleitung_inf = st.checkbox("Ausleitung von Schwermetallen/Umweltgiften/PostVacSyndrom mit Infusionen", 
-                                        value=therapieplan_data.get("ausleitung_inf", False))
+            ausleitung_inf = st.checkbox("Schwermetallausleitung Infusion", 
+                                    value=therapieplan_data.get("ausleitung_inf", False),
+                                    key="ausleitung_inf_checkbox")
         with col2:
-            ausleitung_oral = st.checkbox("Ausleitung von Schwermetallen/Umweltgiften/PostVacSyndrom oral", 
-                                        value=therapieplan_data.get("ausleitung_oral", False))
+            ausleitung_oral = st.checkbox("Schwermetallausleitung oral", 
+                                    value=therapieplan_data.get("ausleitung_oral", False),
+                                    key="ausleitung_oral_checkbox")
 
-        # Sub-section: Therapieformen
-        st.markdown("**Therapieformen**")
-        col1, col2 = st.columns(2)
-        with col1:
-            mikronaehrstoffe = st.checkbox("Einnahme von Mikronährstoffen (NEM-Verordnung)", 
-                                        value=therapieplan_data.get("mikronaehrstoffe", False))
-            infusionsbehandlung = st.checkbox("Infusionsbehandlung", 
-                                            value=therapieplan_data.get("infusionsbehandlung", False))
-            neuraltherapie = st.checkbox("Neuraltherapie", 
-                                        value=therapieplan_data.get("neuraltherapie", False))
-            eigenblut = st.checkbox("Eigenbluttherapie", 
-                                value=therapieplan_data.get("eigenblut", False))
-            medikamente = st.checkbox("Medikamentenverordnung", 
-                                    value=therapieplan_data.get("medikamente", False))
-        with col2:
-            bio_isopath = st.checkbox("Biologische / Isopathische Therapie", 
-                                    value=therapieplan_data.get("bio_isopath", False))
-            timewaver_analyse = st.checkbox("Timewaver Analyse", 
-                                        value=therapieplan_data.get("timewaver_analyse", False))
-            timewaver_freq = st.checkbox("Timewaver Frequency Behandlung", 
-                                        value=therapieplan_data.get("timewaver_freq", False))
-            weitere_labor = st.checkbox("Weitere Labordiagnostik (z. B. IMD, Dedimed, MMD, NextGen Onco)", 
-                                    value=therapieplan_data.get("weitere_labor", False))
-
-        # Sub-section: Ergänzende Therapieformen
-        st.markdown("**Ergänzende Therapieformen**")
-        col1, col2 = st.columns(2)
-        with col1:
-            ernaehrung = st.checkbox("Ernährungsänderung und -beratung", 
-                                value=therapieplan_data.get("ernaehrung", False))
-            hypnose = st.checkbox("Hypnosetherapie", 
-                                value=therapieplan_data.get("hypnose", False))
-        with col2:
-            yager = st.checkbox("Yagertherapie", 
-                            value=therapieplan_data.get("yager", False))
-            energetisch = st.checkbox("Energetische Behandlung (Marie / Noreen / Martin / KU / Sandra)", 
-                                    value=therapieplan_data.get("energetisch", False))
-        
         st.markdown("---")
-        
+
         # Section 2: Therapieformen
         st.markdown('<div class="green-section-header">Therapieformen</div>', unsafe_allow_html=True)
         
-        # Sub-section: Darmsanierung / Leberdetox
-        st.markdown("**Darmsanierung / Leberdetox**")
+        # Sub-section: Haupttherapien
+        st.markdown("**Haupttherapien**")
         col1, col2 = st.columns(2)
         with col1:
-            darmsanierung_ern = st.checkbox("Darmsanierung nach Paracelsus Klinik", 
-                                    value=ernaehrung_data.get("darmsanierung", False))
+            mikronaehrstoffe = st.checkbox("Einnahme Mikronährstoffen (NEM-Verordnung) (siehe separate PDF)", 
+                                        value=therapieplan_data.get("mikronaehrstoffe", False),
+                                        key="mikronaehrstoffe_checkbox")
+            infusionsbehandlung = st.checkbox("Infusionstherapie (siehe separate PDF)", 
+                                            value=therapieplan_data.get("infusionsbehandlung", False),
+                                            key="infusionsbehandlung_checkbox")
+            neuraltherapie = st.checkbox("Neuraltherapie", 
+                                        value=therapieplan_data.get("neuraltherapie", False),
+                                        key="neuraltherapie_checkbox")
         with col2:
-            leberdetox_ern = st.radio("Leberdetox", ["Keine", "2 Tage Kurz-Intensiv", "5 Tage Standard"], 
-                                index=["Keine", "2 Tage Kurz-Intensiv", "5 Tage Standard"].index(
-                                    ernaehrung_data.get("leberdetox", "Keine")))
-
-        # Sub-section: Ernährungskonzepte
-        st.markdown("**Ernährungskonzepte**")
-        col1, col2 = st.columns(2)
-        with col1:
-            lowcarb = st.checkbox("Low Carb Ernährung (viel Protein und viel gesundes Fett/Öl)", 
-                                value=ernaehrung_data.get("lowcarb", False))
-            proteinmenge = st.text_input("Proteinmenge", placeholder="z. B. 1,5 g / kg KG", 
-                                    value=ernaehrung_data.get("proteinmenge", ""))
-            fasten = st.checkbox("Intermittierendes Fasten / 4-tägiges Fasten", 
-                            value=ernaehrung_data.get("fasten", False))
-            krebsdiaet = st.checkbox("Krebs-Diät nach Dr. Coy / Dr. Strunz / Budwig", 
-                                value=ernaehrung_data.get("krebsdiaet", False))
-        with col2:
-            keto = st.checkbox("Ketogene Ernährung", 
-                            value=ernaehrung_data.get("keto", False))
-            oelziehen = st.checkbox("Ölziehen mit Kokosöl (2x10 Min. nach dem Zähneputzen)", 
-                                value=ernaehrung_data.get("oelziehen", False))
-            detox_vacc = st.checkbox("Detox vacc Protokoll (3–12 Monate, gelb markiert)", 
-                                value=ernaehrung_data.get("detox_vacc", False))
-
-        # Sub-section: Sonstige Empfehlungen
-        st.markdown("**Sonstige Empfehlungen**")
-        col1, col2 = st.columns(2)
-        with col1:
-            abnehmen = st.checkbox("Abnehmen mit Akupunktur nach Uwe Richter", 
-                                value=ernaehrung_data.get("abnehmen", False))
-            salz = st.checkbox("Gut gesalzene Kost mit Himalaya- oder Meersalz (fluoridfrei)", 
-                            value=ernaehrung_data.get("salz", False))
-            phosphat = st.checkbox("Phosphatreiche Nahrungsmittel", 
-                                value=ernaehrung_data.get("phosphat", False))
-            kalium = st.checkbox("Kaliumreiche Nahrungsmittel", 
-                            value=ernaehrung_data.get("kalium", False))
-            basisch = st.checkbox("Basische Ernährung (pflanzlich)", 
-                                value=ernaehrung_data.get("basisch", False))
-        with col2:
-            fluoridfrei = st.checkbox("Fluoridfreies Leben (Zahnpasta, Salz etc.)", 
-                                    value=ernaehrung_data.get("fluoridfrei", False))
-            wasserfilter = st.checkbox("Wasserfilter (Umkehrosmose oder Tischfilter, z. B. Maunaway)", 
-                                    value=ernaehrung_data.get("wasserfilter", False))
-            atem = st.checkbox("Atemtherapie (z. B. Wim Hof oder Yoga)", 
-                            value=ernaehrung_data.get("atem", False))
-            beratung = st.checkbox("Ernährungsberatung", 
-                                value=ernaehrung_data.get("beratung", False))
-
-        # Sub-section: Bewegung
-        st.markdown("**Bewegung**")
-        col1, col2 = st.columns(2)
-        with col1:
-            ruecken = st.checkbox("Rückentraining (z. B. Kieser Training)", 
-                                value=ernaehrung_data.get("ruecken", False))
-            cardio = st.checkbox("Cardio", 
-                            value=ernaehrung_data.get("cardio", False))
-        with col2:
-            ausdauer = st.checkbox("Ausdauertraining", 
-                                value=ernaehrung_data.get("ausdauer", False))
-            trampolin = st.checkbox("Trampolin", 
-                                value=ernaehrung_data.get("trampolin", False))
-            barre = st.checkbox("Barre Mobility – Bewegungsapparat in Balance (150€)", 
-                            value=ernaehrung_data.get("barre", False))
-
-
-        # Update session states for Therapieplan and Ernährung tabs only
-                # Combined data collection for Therapieplan tab only
-        combined_therapieplan_data = {
-            # From Diagnostik & Überprüfung
-            "zaehne": zaehne,
-            "zaehne_zu_pruefen": zaehne_zu_pruefen,
-            "darm_biofilm": darm_biofilm,
-            "darmsanierung": darmsanierung,
-            "darmsanierung_dauer": darmsanierung_dauer,
-            "hydrocolon": hydrocolon,
-            "parasiten": parasiten,
-            "parasiten_bio": parasiten_bio,
-            "leberdetox": leberdetox,
-            "nierenprogramm": nierenprogramm,
-            "infektion_bakt": infektion_bakt,
-            "infektion_virus": infektion_virus,
-            "ausleitung_inf": ausleitung_inf,
-            "ausleitung_oral": ausleitung_oral,
-            "mikronaehrstoffe": mikronaehrstoffe,
-            "infusionsbehandlung": infusionsbehandlung,
-            "neuraltherapie": neuraltherapie,
-            "eigenblut": eigenblut,
-            "medikamente": medikamente,
-            "bio_isopath": bio_isopath,
-            "timewaver_analyse": timewaver_analyse,
-            "timewaver_freq": timewaver_freq,
-            "weitere_labor": weitere_labor,
-            "ernaehrung": ernaehrung,
-            "hypnose": hypnose,
-            "yager": yager,
-            "energetisch": energetisch,
-            
-            # From Therapieformen
-            "darmsanierung_ern": darmsanierung_ern,
-            "leberdetox_ern": leberdetox_ern,
-            "lowcarb": lowcarb,
-            "proteinmenge": proteinmenge,
-            "fasten": fasten,
-            "krebsdiaet": krebsdiaet,
-            "keto": keto,
-            "oelziehen": oelziehen,
-            "detox_vacc": detox_vacc,
-            "abnehmen": abnehmen,
-            "salz": salz,
-            "phosphat": phosphat,
-            "kalium": kalium,
-            "basisch": basisch,
-            "fluoridfrei": fluoridfrei,
-            "wasserfilter": wasserfilter,
-            "atem": atem,
-            "beratung": beratung,
-            "ruecken": ruecken,
-            "cardio": cardio,
-            "ausdauer": ausdauer,
-            "trampolin": trampolin,
-            "barre": barre
-        }
-
-        # Update session states for Therapieplan and Ernährung tabs only
-        st.session_state.therapieplan_data = {
-            "zaehne": zaehne,
-            "zaehne_zu_pruefen": zaehne_zu_pruefen,
-            "darm_biofilm": darm_biofilm,
-            "darmsanierung": darmsanierung,
-            "darmsanierung_dauer": darmsanierung_dauer,
-            "hydrocolon": hydrocolon,
-            "parasiten": parasiten,
-            "parasiten_bio": parasiten_bio,
-            "leberdetox": leberdetox,
-            "nierenprogramm": nierenprogramm,
-            "infektion_bakt": infektion_bakt,
-            "infektion_virus": infektion_virus,
-            "ausleitung_inf": ausleitung_inf,
-            "ausleitung_oral": ausleitung_oral,
-            "mikronaehrstoffe": mikronaehrstoffe,
-            "infusionsbehandlung": infusionsbehandlung,
-            "neuraltherapie": neuraltherapie,
-            "eigenblut": eigenblut,
-            "medikamente": medikamente,
-            "bio_isopath": bio_isopath,
-            "timewaver_analyse": timewaver_analyse,
-            "timewaver_freq": timewaver_freq,
-            "weitere_labor": weitere_labor,
-            "ernaehrung": ernaehrung,
-            "hypnose": hypnose,
-            "yager": yager,
-            "energetisch": energetisch
-        }
+            eigenblut = st.checkbox("Eigenbluttherapie", 
+                                value=therapieplan_data.get("eigenblut", False),
+                                key="eigenblut_checkbox")
+            aethetisch = st.checkbox("Ästhetische Behandlung (Botox/PRP/Fäden/Hyaloron)", 
+                                    value=therapieplan_data.get("aethetisch", False),
+                                    key="aethetisch_checkbox")
+            ozontherapie = st.checkbox("Ozontherapie", 
+                                    value=therapieplan_data.get("ozontherapie", False),
+                                    key="ozontherapie_checkbox")
         
-        st.session_state.ernaehrung_data = {
-            "darmsanierung": darmsanierung_ern,
-            "leberdetox": leberdetox_ern,
+        col1, col2 = st.columns(2)
+        with col1:
+            medikamente = st.checkbox("Medikamentenverordnung - Rezept für:", 
+                                    value=therapieplan_data.get("medikamente", False),
+                                    key="medikamente_checkbox")
+            medikamente_text = st.text_input("Rezept Details:", 
+                                            value=therapieplan_data.get("medikamente_text", ""),
+                                            key="medikamente_text_input")
+        with col2:
+            timewaver_freq = st.checkbox("TimeWaver Frequency Behandlung", 
+                                        value=therapieplan_data.get("timewaver_freq", False),
+                                        key="timewaver_freq_checkbox")
+
+        # Sub-section: Biologische & Komplementäre Therapien
+        st.markdown("**Biologische & Komplementäre Therapien**")
+        col1, col2 = st.columns(2)
+        with col1:
+            bio_isopath = st.checkbox("Biologische Isopathische Therapie", 
+                                    value=therapieplan_data.get("bio_isopath", False),
+                                    key="bio_isopath_checkbox")
+            akupunktur = st.checkbox("Akupunktur", 
+                                    value=therapieplan_data.get("akupunktur", False),
+                                    key="akupunktur_checkbox")
+            homoeopathie = st.checkbox("Homöopathie (Anna)", 
+                                    value=therapieplan_data.get("homoeopathie", False),
+                                    key="homoeopathie_checkbox")
+        with col2:
+            bioresonanz = st.checkbox("Bioresonanz (Anna)", 
+                                    value=therapieplan_data.get("bioresonanz", False),
+                                    key="bioresonanz_checkbox")
+            hypnose = st.checkbox("Hypnosetherapie (Noreen Martin Miro)", 
+                                value=therapieplan_data.get("hypnose", False),
+                                key="hypnose_checkbox")
+            yager = st.checkbox("Yagertherapie", 
+                            value=therapieplan_data.get("yager", False),
+                            key="yager_checkbox")
+
+        # Sub-section: Weitere Maßnahmen
+        st.markdown("**Weitere Maßnahmen**")
+        col1, col2 = st.columns(2)
+        with col1:
+            atemtherapie = st.checkbox("Atemtherapie", 
+                                    value=therapieplan_data.get("atemtherapie", False),
+                                    key="atemtherapie_checkbox")
+            bewegung = st.checkbox("Bewegung", 
+                                value=therapieplan_data.get("bewegung", False),
+                                key="bewegung_checkbox")
+            ernaehrung = st.checkbox("Ernährungsberatung", 
+                                    value=therapieplan_data.get("ernaehrung", False),
+                                    key="ernaehrung_checkbox")
+            darmsanierung_ern = st.checkbox("Darmsanierung", 
+                                        value=therapieplan_data.get("darmsanierung_ern", False),
+                                        key="darmsanierung_ern_checkbox")
+        with col2:
+            leberreinigung = st.checkbox("Leberreinigung", 
+                                    value=therapieplan_data.get("leberreinigung", False),
+                                    key="leberreinigung_checkbox")
+            lowcarb = st.checkbox("Low Carb Ernährung", 
+                                value=therapieplan_data.get("lowcarb", False),
+                                key="lowcarb_checkbox")
+            fasten = st.checkbox("Intermittierendes Fasten", 
+                            value=therapieplan_data.get("fasten", False),
+                            key="fasten_checkbox")
+            krebsdiaet = st.checkbox("Krebs Diät nach Dr. Coy/Dr. Strunz/angelehnt Budwig", 
+                                    value=therapieplan_data.get("krebsdiaet", False),
+                                    key="krebsdiaet_checkbox")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            ketogene = st.checkbox("Ketogene Ernährung", 
+                                value=therapieplan_data.get("ketogene", False),
+                                key="ketogene_checkbox")
+            basisch = st.checkbox("Basische Ernährung", 
+                                value=therapieplan_data.get("basisch", False),
+                                key="basisch_checkbox")
+            naehrstoff_ausgleich = st.text_input("Nährstoffmängel ausgleichen:", 
+                                            value=therapieplan_data.get("naehrstoff_ausgleich", ""),
+                                            key="naehrstoff_ausgleich_input")
+        with col2:
+            therapie_sonstiges = st.text_input("Sonstiges:", 
+                                            value=therapieplan_data.get("therapie_sonstiges", ""),
+                                            key="therapie_sonstiges_input")
+
+        # Sub-section: Individuelle Behandlungen
+        st.markdown("**Individuelle Behandlungen**")
+        col1, col2 = st.columns(2)
+        with col1:
+            magenband = st.checkbox("Magenband", 
+                                value=therapieplan_data.get("magenband", False),
+                                key="magenband_checkbox")
+        with col2:
+            energie_behandlungen = st.checkbox("Energiebehandlungen bei Marie", 
+                                            value=therapieplan_data.get("energie_behandlungen", False),
+                                            key="energie_behandlungen_checkbox")
+
+        st.markdown("---")
+
+        # Sub-section: Gesprächstermine
+        st.markdown("**Gesprächstermine**")
+        col1, col2 = st.columns(2)
+        with col1:
+            zwischengespraech_4 = st.checkbox("Zwischengespräch nach 4 Wochen (1/2h)", 
+                                            value=therapieplan_data.get("zwischengespraech_4", False),
+                                            key="zwischengespraech_4_checkbox")
+        with col2:
+            zwischengespraech_8 = st.checkbox("Zwischengespräch nach weiteren 8 Wochen (1/2h)", 
+                                            value=therapieplan_data.get("zwischengespraech_8", False),
+                                            key="zwischengespraech_8_checkbox")
+
+        # Update session states for Therapieplan
+        st.session_state.therapieplan_data = {
+            # Diagnostik & Überprüfung
+            "zaehne": zaehne,
+            "zaehne_zu_pruefen": zaehne_zu_pruefen,
+            
+            # Labor & Diagnostik
+            "lab_imd": lab_imd,
+            "lab_mmd": lab_mmd,
+            "lab_nextgen": lab_nextgen,
+            "lab_sonstiges": lab_sonstiges,
+            
+            # Bewegungsapparat & Schwermetalle
+            "analyse_bewegungsapparat": analyse_bewegungsapparat,
+            "schwermetalltest": schwermetalltest,
+            
+            # Darm & Entgiftung
+            "darm_biofilm": darm_biofilm,
+            "darmsanierung": darmsanierung,
+            "darmsanierung_dauer": darmsanierung_dauer,
+            "hydrocolon": hydrocolon,
+            "parasiten": parasiten,
+            "parasiten_bio": parasiten_bio,
+            "leberdetox": leberdetox,
+            "nierenprogramm": nierenprogramm,
+            
+            # Infektionen & Ausleitung
+            "infektion_bakt": infektion_bakt,
+            "infektion_virus": infektion_virus,
+            "ausleitung_inf": ausleitung_inf,
+            "ausleitung_oral": ausleitung_oral,
+            
+            # Therapieformen
+            "mikronaehrstoffe": mikronaehrstoffe,
+            "infusionsbehandlung": infusionsbehandlung,
+            "neuraltherapie": neuraltherapie,
+            "eigenblut": eigenblut,
+            "aethetisch": aethetisch,
+            "ozontherapie": ozontherapie,
+            "medikamente": medikamente,
+            "medikamente_text": medikamente_text,
+            "timewaver_freq": timewaver_freq,
+            "bio_isopath": bio_isopath,
+            "akupunktur": akupunktur,
+            "homoeopathie": homoeopathie,
+            "bioresonanz": bioresonanz,
+            "hypnose": hypnose,
+            "yager": yager,
+            
+            # Weitere Maßnahmen
+            "atemtherapie": atemtherapie,
+            "bewegung": bewegung,
+            "ernaehrung": ernaehrung,
+            "darmsanierung_ern": darmsanierung_ern,
+            "leberreinigung": leberreinigung,
             "lowcarb": lowcarb,
-            "proteinmenge": proteinmenge,
             "fasten": fasten,
             "krebsdiaet": krebsdiaet,
-            "keto": keto,
-            "oelziehen": oelziehen,
-            "detox_vacc": detox_vacc,
-            "abnehmen": abnehmen,
-            "salz": salz,
-            "phosphat": phosphat,
-            "kalium": kalium,
+            "ketogene": ketogene,
             "basisch": basisch,
-            "fluoridfrei": fluoridfrei,
-            "wasserfilter": wasserfilter,
-            "atem": atem,
-            "beratung": beratung,
-            "ruecken": ruecken,
-            "cardio": cardio,
-            "ausdauer": ausdauer,
-            "trampolin": trampolin,
-            "barre": barre
+            "naehrstoff_ausgleich": naehrstoff_ausgleich,
+            "therapie_sonstiges": therapie_sonstiges,
+            
+            # Individuelle Behandlungen
+            "magenband": magenband,
+            "energie_behandlungen": energie_behandlungen,
+            
+            # Gesprächstermine
+            "zwischengespraech_4": zwischengespraech_4,
+            "zwischengespraech_8": zwischengespraech_8,
         }
 
-        # Single PDF button at the end
-        if st.button("Therapieplan PDF generieren"):
-            pdf_bytes = generate_pdf(patient, combined_therapieplan_data, "THERAPIEPLAN")
+        # Update the PDF generation function call to use updated data
+        if st.button("Therapieplan PDF generieren", key="therapieplan_pdf_button"):
+            # Use the same data for PDF
+            pdf_bytes = generate_pdf(patient, st.session_state.therapieplan_data, "THERAPIEPLAN")
             filename = f"RevitaClinic_Therapieplan_{patient.get('patient','')}.pdf"
             
             # Set auto-download
@@ -1686,10 +1825,7 @@ def main():
             }
             st.rerun()
     
-    
 
-        # TAB 3: Infusionstherapie
-    
     with tabs[1]:
         # Store NEM prescriptions in a container
         nem_container = st.container()
@@ -2003,7 +2139,7 @@ def main():
                             all_supplements_data.append(prescription_data)
 
                 # Form submit buttons
-                pdf_submitted = st.form_submit_button("NEM PDF generieren")
+                pdf_submitted = st.form_submit_button("NEM PDF generieren", key="nem_pdf_button")
 
             # Handle form submissions OUTSIDE the form context
             if pdf_submitted:
@@ -2082,75 +2218,202 @@ def main():
         # Section: Infusionstherapie
         st.markdown('<div class="green-section-header">Infusionstherapie</div>', unsafe_allow_html=True)
         
-        # Sub-section: Infusionen
-        st.markdown("**Infusionen**")
-        col1, col2 = st.columns(2)
-        with col1:
-            mito_energy = st.checkbox("Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)", 
-                                    value=infusion_data.get("mito_energy", False))
-            schwermetalltest = st.checkbox("Schwermetalltest mit DMSA und Ca EDTA", 
-                                        value=infusion_data.get("schwermetalltest", False))
-            procain_basen = st.checkbox("Procain Baseninfusion mit Magnesium", 
-                                    value=infusion_data.get("procain_basen", False))
-            procain_2percent = st.text_input("Procain 2% (ml)", 
-                                        value=infusion_data.get("procain_2percent", ""))
-            artemisinin = st.checkbox("Artemisinin Infusion mit 2x Lysin", 
-                                    value=infusion_data.get("artemisinin", False))
-            perioperative = st.checkbox("Perioperative Infusion (3 Infusionen)", 
-                                    value=infusion_data.get("perioperative", False))
-            detox_standard = st.checkbox("Detox-Infusion Standard", 
-                                    value=infusion_data.get("detox_standard", False))
-        with col2:
-            detox_maxi = st.checkbox("Detox-Infusion Maxi", 
-                                value=infusion_data.get("detox_maxi", False))
-            aufbauinfusion = st.checkbox("Aufbauinfusion nach Detox", 
-                                    value=infusion_data.get("aufbauinfusion", False))
-            infektions_infusion = st.text_input("Infektions-Infusion / H2O2 (Anzahl / ml)", 
-                                            value=infusion_data.get("infektions_infusion", ""))
-            immun_booster = st.selectbox("Immun-Boosterung Typ", ["", "Typ 1", "Typ 2", "Typ 3"], 
-                                    index=["", "Typ 1", "Typ 2", "Typ 3"].index(
-                                        infusion_data.get("immun_booster", "")))
-            oxyvenierung = st.checkbox("Oxyvenierung (10–40 ml, 10er Serie)", 
-                                    value=infusion_data.get("oxyvenierung", False))
-            energetisierungsinfusion = st.multiselect("Energetisierungsinfusion mit", 
-                                                    ["Vitamin B Shot", "Q10 Boostershot"],
-                                                    default=infusion_data.get("energetisierungsinfusion", []))
+        # Sub-section: RevitaClinic Infusionen
+        st.markdown("**RevitaClinic Infusionen**")
         
         col1, col2 = st.columns(2)
         with col1:
+            revita_immune = st.checkbox("RevitaImmune", value=infusion_data.get("revita_immune", False), key="revita_immune_checkbox")
+            revita_immune_plus = st.checkbox("RevitaImmunePlus", value=infusion_data.get("revita_immune_plus", False), key="revita_immune_plus_checkbox")
+            revita_heal = st.checkbox("Revita Heal (2x)", value=infusion_data.get("revita_heal", False), key="revita_heal_checkbox")
+            revita_bludder = st.checkbox("RevitaBludder", value=infusion_data.get("revita_bludder", False), key="revita_bludder_checkbox")
+            revita_ferro = st.checkbox("RevitaFerro", value=infusion_data.get("revita_ferro", False), key="revita_ferro_checkbox")
+            revita_energy = st.checkbox("RevitaEnergyBoost", value=infusion_data.get("revita_energy", False), key="revita_energy_checkbox")
+            revita_focus = st.checkbox("RevitaFocus", value=infusion_data.get("revita_focus", False), key="revita_focus_checkbox")
+        with col2:
+            revita_nad = st.checkbox("RevitaNAD+", value=infusion_data.get("revita_nad", False), key="revita_nad_checkbox")
+            revita_relax = st.checkbox("RevitaRelax", value=infusion_data.get("revita_relax", False), key="revita_relax_checkbox")
+            revita_fit = st.checkbox("RevitaFit", value=infusion_data.get("revita_fit", False), key="revita_fit_checkbox")
+            revita_hangover = st.checkbox("RevitaHangover", value=infusion_data.get("revita_hangover", False), key="revita_hangover_checkbox")
+            revita_beauty = st.checkbox("RevitaBeauty", value=infusion_data.get("revita_beauty", False), key="revita_beauty_checkbox")
+            revita_antiaging = st.checkbox("RevitaAnti-Aging", value=infusion_data.get("revita_antiaging", False), key="revita_antiaging_checkbox")
+            revita_detox = st.checkbox("RevitaDetox", value=infusion_data.get("revita_detox", False), key="revita_detox_checkbox")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            revita_chelate = st.checkbox("RevitaChelate", value=infusion_data.get("revita_chelate", False), key="revita_chelate_checkbox")
+            revita_liver = st.checkbox("RevitaLiver", value=infusion_data.get("revita_liver", False), key="revita_liver_checkbox")
+            revita_leakygut = st.checkbox("RevitaLeaky-gut", value=infusion_data.get("revita_leakygut", False), key="revita_leakygut_checkbox")
+        with col2:
+            revita_infection = st.checkbox("RevitaInfection", value=infusion_data.get("revita_infection", False), key="revita_infection_checkbox")
+            revita_joint = st.checkbox("RevitaJoint", value=infusion_data.get("revita_joint", False), key="revita_joint_checkbox")
+
+        st.markdown("---")
+        
+        # Sub-section: Standard Infusionen
+        st.markdown("**Standard Infusionen**")
+        col1, col2 = st.columns(2)
+        with col1:
+            mito_energy = st.checkbox("Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)", 
+                                    value=infusion_data.get("mito_energy", False),
+                                    key="mito_energy_checkbox")
+            schwermetalltest = st.checkbox("Schwermetalltest mit DMSA und Ca EDTA", 
+                                        value=infusion_data.get("schwermetalltest", False),
+                                        key="schwermetalltest_checkbox2")
+            procain_basen = st.checkbox("Procain Baseninfusion mit Magnesium", 
+                                    value=infusion_data.get("procain_basen", False),
+                                    key="procain_basen_checkbox")
+            procain_2percent = st.text_input("Procain 2% (ml)", 
+                                        value=infusion_data.get("procain_2percent", ""),
+                                        key="procain_2percent_input")
+            artemisinin = st.checkbox("Artemisinin Infusion mit 2x Lysin", 
+                                    value=infusion_data.get("artemisinin", False),
+                                    key="artemisinin_checkbox")
+        with col2:
+            perioperative = st.checkbox("Perioperative Infusion (3 Infusionen)", 
+                                    value=infusion_data.get("perioperative", False),
+                                    key="perioperative_checkbox")
+            detox_standard = st.checkbox("Detox-Infusion Standard", 
+                                    value=infusion_data.get("detox_standard", False),
+                                    key="detox_standard_checkbox")
+            detox_maxi = st.checkbox("Detox-Infusion Maxi", 
+                                value=infusion_data.get("detox_maxi", False),
+                                key="detox_maxi_checkbox")
+            aufbauinfusion = st.checkbox("Aufbauinfusion nach Detox", 
+                                    value=infusion_data.get("aufbauinfusion", False),
+                                    key="aufbauinfusion_checkbox")
+            infektions_infusion = st.text_input("Infektions-Infusion / H2O2 (Anzahl / ml)", 
+                                            value=infusion_data.get("infektions_infusion", ""),
+                                            key="infektions_infusion_input")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            immun_booster = st.selectbox("Immun-Boosterung Typ", ["", "Typ 1", "Typ 2", "Typ 3"], 
+                                    index=["", "Typ 1", "Typ 2", "Typ 3"].index(
+                                        infusion_data.get("immun_booster", "")),
+                                    key="immun_booster_select")
+            oxyvenierung = st.checkbox("Oxyvenierung (10–40 ml, 10er Serie)", 
+                                    value=infusion_data.get("oxyvenierung", False),
+                                    key="oxyvenierung_checkbox")
+            energetisierungsinfusion = st.multiselect("Energetisierungsinfusion mit", 
+                                                    ["Vitamin B Shot", "Q10 Boostershot"],
+                                                    default=infusion_data.get("energetisierungsinfusion", []),
+                                                    key="energetisierungsinfusion_select")
             naehrstoffinfusion = st.multiselect("Nährstoffinfusion mit", 
                                             ["Glutathion", "Alpha Liponsäure"],
-                                            default=infusion_data.get("naehrstoffinfusion", []))
-            anti_aging = st.checkbox("Anti Aging Infusion komplett", 
-                                value=infusion_data.get("anti_aging", False))
-            nerven_aufbau = st.checkbox("Nerven Aufbau Infusion", 
-                                    value=infusion_data.get("nerven_aufbau", False))
-            leberentgiftung = st.checkbox("Leberentgiftungsinfusion", 
-                                        value=infusion_data.get("leberentgiftung", False))
+                                            default=infusion_data.get("naehrstoffinfusion", []),
+                                            key="naehrstoffinfusion_select")
         with col2:
+            anti_aging = st.checkbox("Anti Aging Infusion komplett", 
+                                value=infusion_data.get("anti_aging", False),
+                                key="anti_aging_checkbox")
+            nerven_aufbau = st.checkbox("Nerven Aufbau Infusion", 
+                                    value=infusion_data.get("nerven_aufbau", False),
+                                    key="nerven_aufbau_checkbox")
+            leberentgiftung = st.checkbox("Leberentgiftungsinfusion", 
+                                        value=infusion_data.get("leberentgiftung", False),
+                                        key="leberentgiftung_checkbox")
             anti_oxidantien = st.checkbox("Anti-Oxidantien Infusion", 
-                                        value=infusion_data.get("anti_oxidantien", False))
+                                        value=infusion_data.get("anti_oxidantien", False),
+                                        key="anti_oxidantien_checkbox")
+        
+        col1, col2 = st.columns(2)
+        with col1:
             aminoinfusion = st.checkbox("Aminoinfusion leaky gut (5–10)", 
-                                    value=infusion_data.get("aminoinfusion", False))
+                                    value=infusion_data.get("aminoinfusion", False),
+                                    key="aminoinfusion_checkbox")
             relax_infusion = st.checkbox("Relax Infusion", 
-                                    value=infusion_data.get("relax_infusion", False))
+                                    value=infusion_data.get("relax_infusion", False),
+                                    key="relax_infusion_checkbox")
+        with col2:
             eisen_infusion = st.text_input("Eisen Infusion (Ferinject) mg / Anzahl", 
-                                        value=infusion_data.get("eisen_infusion", ""))
-            vitamin_c = st.text_input("Vitamin C Hochdosis (g)", 
-                                    value=infusion_data.get("vitamin_c", ""))
+                                        value=infusion_data.get("eisen_infusion", ""),
+                                        key="eisen_infusion_input")
 
+        st.markdown("---")
+        
+        # Sub-section: Single Ingredients / Einzel
+        st.markdown("**Single Ingredients / Einzel**")
+        col1, col2 = st.columns(2)
+        with col1:
+            vitamin_c = st.text_input("Hochdosis Vitamin C (g)", 
+                                    value=infusion_data.get("vitamin_c", ""),
+                                    key="vitamin_c_input")
+            vitamin_b_komplex = st.text_input("Vit. B-Komplex", 
+                                            value=infusion_data.get("vitamin_b_komplex", ""),
+                                            key="vitamin_b_komplex_input")
+            vitamin_d = st.text_input("Vit. D", 
+                                    value=infusion_data.get("vitamin_d", ""),
+                                    key="vitamin_d_input")
+        with col2:
+            vitamin_b6_b12_folsaeure = st.text_input("Vit. B6/B12/Folsäure", 
+                                                    value=infusion_data.get("vitamin_b6_b12_folsaeure", ""),
+                                                    key="vitamin_b6_b12_folsaeure_input")
+            vitamin_b3 = st.text_input("Vit. B3", 
+                                    value=infusion_data.get("vitamin_b3", ""),
+                                    key="vitamin_b3_input")
+
+        st.markdown("---")
+        
+        # Sub-section: Häufigkeit & Dauer
+        st.markdown("**Häufigkeit & Dauer**")
+        col1, col2 = st.columns(2)
+        with col1:
+            wochen_haeufigkeit = st.selectbox("Wie oft", 
+                                            ["", "1x/Woche", "2x/Woche", "3x/Woche", "Täglich"],
+                                            index=["", "1x/Woche", "2x/Woche", "3x/Woche", "Täglich"].index(
+                                                infusion_data.get("wochen_haeufigkeit", "")),
+                                            key="wochen_haeufigkeit_select")
+            therapie_beginn = st.date_input("Therapie Beginn",
+                                            value=infusion_data.get("therapie_beginn", date.today()),
+                                            format="DD.MM.YYYY",
+                                            key="therapie_beginn_input2")
+        with col2:
+            therapie_ende = st.date_input("Therapie Ende",
+                                        value=infusion_data.get("therapie_ende", date.today()),
+                                        format="DD.MM.YYYY",
+                                        key="therapie_ende_input")
+            therapie_dauer = st.text_input("Dauer (Wochen/Monate)",
+                                        value=infusion_data.get("therapie_dauer", ""),
+                                        key="therapie_dauer_input")
+
+        st.markdown("---")
+        
         # Sub-section: Zusätze
         st.markdown("**Zusätze**")
         zusaetze = st.multiselect(
             "Zusätze auswählen",
             ["Vit.B Komplex", "Vit.B6/B12/Folsäure", "Vit.D 300 kIE", "Vit.B3", "Biotin", "Glycin",
             "Cholincitrat", "Zink inject", "Magnesium 400mg", "TAD (red.Glut.)", "Arginin", "Glutamin",
-            "Taurin", "Ornithin", "Prolin/Lysin", "Lysin", "PC 1000mg"],
-            default=infusion_data.get("zusaetze", [])
+            "Taurin", "Ornithin", "Prolin/Lysin", "Lysin", "PC 1000mg", "Oxyvenierung", "Mito-Energy"],
+            default=infusion_data.get("zusaetze", []),
+            key="zusaetze_select"
         )
         
         # Update session state for infusion data
         st.session_state.infusion_data = {
+            # RevitaClinic Infusionen
+            "revita_immune": revita_immune,
+            "revita_immune_plus": revita_immune_plus,
+            "revita_heal": revita_heal,
+            "revita_bludder": revita_bludder,
+            "revita_ferro": revita_ferro,
+            "revita_energy": revita_energy,
+            "revita_focus": revita_focus,
+            "revita_nad": revita_nad,
+            "revita_relax": revita_relax,
+            "revita_fit": revita_fit,
+            "revita_hangover": revita_hangover,
+            "revita_beauty": revita_beauty,
+            "revita_antiaging": revita_antiaging,
+            "revita_detox": revita_detox,
+            "revita_chelate": revita_chelate,
+            "revita_liver": revita_liver,
+            "revita_leakygut": revita_leakygut,
+            "revita_infection": revita_infection,
+            "revita_joint": revita_joint,
+            
+            # Standard Infusionen
             "mito_energy": mito_energy,
             "schwermetalltest": schwermetalltest,
             "procain_basen": procain_basen,
@@ -2172,7 +2435,21 @@ def main():
             "aminoinfusion": aminoinfusion,
             "relax_infusion": relax_infusion,
             "eisen_infusion": eisen_infusion,
+            
+            # Single Ingredients
             "vitamin_c": vitamin_c,
+            "vitamin_b_komplex": vitamin_b_komplex,
+            "vitamin_d": vitamin_d,
+            "vitamin_b6_b12_folsaeure": vitamin_b6_b12_folsaeure,
+            "vitamin_b3": vitamin_b3,
+            
+            # Häufigkeit & Dauer
+            "wochen_haeufigkeit": wochen_haeufigkeit,
+            "therapie_beginn": therapie_beginn,
+            "therapie_ende": therapie_ende,
+            "therapie_dauer": therapie_dauer,
+            
+            # Zusätze
             "zusaetze": zusaetze
         }
         
@@ -2180,7 +2457,7 @@ def main():
         combined_infusion_data = st.session_state.infusion_data
         
         # PDF button for Infusionstherapie
-        if st.button("Infusionstherapie PDF generieren"):
+        if st.button("Infusionstherapie PDF generieren", key="infusion_pdf_button"):
             pdf_bytes = generate_pdf(patient, combined_infusion_data, "INFUSIONSTHERAPIE")
             filename = f"RevitaClinic_Infusionstherapie_{patient.get('patient','')}.pdf"
             
@@ -2193,7 +2470,6 @@ def main():
             st.rerun()
 
     # Handle save button (saves all tabs)
-        # Handle save button (saves all tabs)
     if save_button:
         if not patient["patient"]:
             st.error("Bitte Patientennamen eingeben!")
