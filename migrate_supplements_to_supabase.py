@@ -1,96 +1,13 @@
-import sqlite3
 import os
-import csv
+from supabase_db import SupabaseDB
 
-DB_PATH = "app.db"
-
-def complete_reset():
-    print("=== COMPLETE DATABASE RESET ===")
+def migrate_supplements():
+    print("Starting supplements migration...")
     
-    # Step 1: Delete old database
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-        print("✅ Removed old database")
+    # Initialize without Streamlit secrets
+    db = SupabaseDB(use_streamlit_secrets=False)
     
-    # Step 2: Create new database with EXACT schema
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Create tables
-    cursor.execute("""
-        CREATE TABLE supplements (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            category INTEGER
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE patients (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_name TEXT UNIQUE,
-            geburtsdatum DATE,
-            geschlecht TEXT,
-            groesse INTEGER,
-            gewicht REAL,
-            therapiebeginn DATE,
-            dauer INTEGER,
-            tw_besprochen TEXT,
-            allergie TEXT,
-            diagnosen TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE patient_prescriptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER,
-            supplement_id TEXT,
-            dauer INTEGER,
-            darreichungsform TEXT,
-            dosierung TEXT,
-            nuechtern TEXT DEFAULT '',
-            morgens TEXT DEFAULT '',
-            mittags TEXT DEFAULT '',
-            abends TEXT DEFAULT '',
-            nachts TEXT DEFAULT '',
-            kommentar TEXT DEFAULT '',
-            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE,
-            FOREIGN KEY (supplement_id) REFERENCES supplements (id)
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE patient_therapieplan (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER UNIQUE,
-            data TEXT,
-            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE patient_ernaehrung (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER UNIQUE,
-            data TEXT,
-            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE patient_infusion (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER UNIQUE,
-            data TEXT,
-            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
-        )
-    """)
-    
-    print("✅ Created new database schema")
-    
-    # Step 3: Manually insert the EXACT supplements with CLEANED names
+    # Your supplements data from init_db.py (keep the same long list)
     supplements = [
         # Category 1: Basis
         ("CAT1", "CATEGORY: Basis", 1),
@@ -299,96 +216,57 @@ def complete_reset():
         ("S170", "SuperPatches Packung 28er", 12),
     ]
     
-    cursor.executemany("INSERT INTO supplements (id, name, category) VALUES (?, ?, ?)", supplements)
-    conn.commit()
-    print(f"✅ Inserted {len(supplements)} supplements")
+    print(f"Migrating {len(supplements)} supplements to Supabase...")
     
-    # Step 4: Verify critical entries
-    print("\n=== VERIFICATION ===")
+    success_count = 0
+    error_count = 0
     
-    # Check Östradiol
-    print("\nÖstradiol entries (should be ONLY in Hormone category 10):")
-    cursor.execute("SELECT id, name, category FROM supplements WHERE name LIKE '%Östradiol%'")
-    for row in cursor.fetchall():
-        status = "✅" if row[2] == 10 else "❌"
-        print(f"{status} {row[0]}: {row[1]} (Category: {row[2]})")
+    for supp_id, name, category in supplements:
+        try:
+            # Check if supplement already exists
+            existing = db.supabase.table('supplements')\
+                .select('id')\
+                .eq('id', supp_id)\
+                .execute()
+            
+            if existing.data:
+                # Update existing
+                db.supabase.table('supplements')\
+                    .update({'name': name, 'category': category})\
+                    .eq('id', supp_id)\
+                    .execute()
+                print(f"🔄 Updated: {name}")
+            else:
+                # Insert new
+                db.supabase.table('supplements')\
+                    .insert({'id': supp_id, 'name': name, 'category': category})\
+                    .execute()
+                print(f"✅ Added: {name}")
+            
+            success_count += 1
+            
+        except Exception as e:
+            print(f"❌ Error with {name}: {e}")
+            error_count += 1
     
-    # Check Zeolith
-    print("\nZeolith entry (should be in Entgiftung oral category 4):")
-    cursor.execute("SELECT id, name, category FROM supplements WHERE name LIKE '%Zeolith%'")
-    row = cursor.fetchone()
-    if row:
-        status = "✅" if row[2] == 4 else "❌"
-        print(f"{status} {row[0]}: {row[1]} (Category: {row[2]})")
-    else:
-        print("❌ Zeolith not found!")
+    print(f"\n📊 Migration complete!")
+    print(f"   Successfully processed: {success_count}")
+    print(f"   Errors: {error_count}")
     
-    # Check LDN
-    print("\nLDN entries (should be ONLY in Hormone category 10):")
-    cursor.execute("SELECT id, name, category FROM supplements WHERE name LIKE '%LDN%' ORDER BY name")
-    ldn_count = 0
-    for row in cursor.fetchall():
-        status = "✅" if row[2] == 10 else "❌"
-        print(f"{status} {row[0]}: {row[1]} (Category: {row[2]})")
-        ldn_count += 1
-    
-    print(f"\nFound {ldn_count} LDN entries (should be 4)")
-    
-    # Check wrong placements
-    print("\n=== CHECKING FOR WRONG PLACEMENTS ===")
-    
-    # Östradiol in wrong categories
-    cursor.execute("SELECT COUNT(*) FROM supplements WHERE name LIKE '%Östradiol%' AND category != 10")
-    wrong_ostradiol = cursor.fetchone()[0]
-    print(f"Östradiol in wrong categories: {wrong_ostradiol} (should be 0)")
-    
-    # LDN in wrong categories
-    cursor.execute("SELECT COUNT(*) FROM supplements WHERE name LIKE '%LDN%' AND category != 10")
-    wrong_ldn = cursor.fetchone()[0]
-    print(f"LDN in wrong categories: {wrong_ldn} (should be 0)")
-    
-    # Zeolith missing
-    cursor.execute("SELECT COUNT(*) FROM supplements WHERE name LIKE '%Zeolith%'")
-    zeolith_count = cursor.fetchone()[0]
-    print(f"Zeolith entries: {zeolith_count} (should be 1)")
-    
-    # Count by category
-    print("\n=== CATEGORY COUNTS ===")
+    # Verify counts
+    print("\n🔍 Verifying categories:")
     for cat_num in range(1, 13):
-        cursor.execute("SELECT COUNT(*) FROM supplements WHERE category = ? AND id NOT LIKE 'CAT%'", (cat_num,))
-        count = cursor.fetchone()[0]
-        cursor.execute("SELECT name FROM supplements WHERE id = ?", (f"CAT{cat_num}",))
-        cat_name = cursor.fetchone()
-        if cat_name:
-            cat_display = cat_name[0].replace("CATEGORY: ", "")
-            print(f"Category {cat_num} ({cat_display}): {count} items")
-    
-    # Show some sample cleaned names
-    print("\n=== SAMPLE CLEANED NAMES ===")
-    sample_categories = [
-        (1, "Basis"),
-        (3, "Aminosäuren"),
-        (4, "Entgiftung oral"),
-        (10, "Hormone")
-    ]
-    
-    for cat_num, cat_name in sample_categories:
-        print(f"\n{cat_name} samples:")
-        cursor.execute("SELECT name FROM supplements WHERE category = ? AND id NOT LIKE 'CAT%' LIMIT 3", (cat_num,))
-        for row in cursor.fetchall():
-            print(f"  - {row[0]}")
-    
-    conn.close()
-    
-    print("\n" + "="*60)
-    print("✅ COMPLETE RESET FINISHED!")
-    print("="*60)
-    print("\nKey improvements:")
-    print("1. Removed dosage forms (Pulver, Kapseln, etc.) from names")
-    print("2. Östradiol ONLY in Hormone category")
-    print("3. Zeolith in Entgiftung oral")
-    print("4. All LDN versions in Hormone category")
-    print("5. All supplements in correct categories with clean names")
+        response = db.supabase.table('supplements')\
+            .select('*')\
+            .eq('category', cat_num)\
+            .execute()
+        count = len([s for s in response.data if not s['id'].startswith('CAT')])
+        cat_response = db.supabase.table('supplements')\
+            .select('name')\
+            .eq('id', f'CAT{cat_num}')\
+            .execute()
+        cat_name = cat_response.data[0]['name'].replace('CATEGORY: ', '') if cat_response.data else f'Category {cat_num}'
+        print(f"   Category {cat_num} ({cat_name}): {count} supplements")
 
 if __name__ == "__main__":
-    complete_reset()
+    migrate_supplements()
