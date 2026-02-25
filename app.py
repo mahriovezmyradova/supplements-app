@@ -1075,26 +1075,36 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         pdf.set_font("Helvetica", "B", 12)
         pdf.cell(table_width, 8, "NAHRUNGSERGÄNZUNGSMITTEL (NEM) VO", 0, 1, "L", True)
 
-        headers = ["Supplement", "Gesamt-dosierung", "Darreichungsform", "Pro Einnahme", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]  # Updated header
-        base_widths = [50, 20, 35, 20, 18, 18, 18, 18, 18]  # Increased width for Pro Einnahme
+        headers = ["Supplement", "Gesamt-dosierung", "Darreichungsform", "Pro Einnahme", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
+        base_widths = [50, 20, 35, 20, 18, 18, 18, 18, 18]
         used_width = sum(base_widths)
         comment_width = table_width - used_width
         widths = base_widths + [comment_width]
 
-        pdf.set_font("Helvetica", "B", 10)
-        for w, h in zip(widths, headers):
-            pdf.cell(w, 8, h, 1, 0, "C", True)
-        pdf.ln()
+        # Store header row for repeating on new pages
+        def table_header():
+            pdf.set_fill_color(38, 96, 65)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", "B", 10)
+            for w, h in zip(widths, headers):
+                pdf.cell(w, 8, h, 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Helvetica", "", 9)
 
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Helvetica", "", 9)
+        # Print initial header
+        table_header()
+
+        # Keep track of row count for page breaks
+        row_count = 0
+        rows_per_page = 25  # Adjust based on your font size and page layout
 
         for s in supplements:
             row = [
                 clean_text(s.get("name", "")),
                 clean_text(s.get("Gesamt-dosierung", "")),
                 clean_text(s.get("Darreichungsform", "")),
-                clean_text(s.get("Pro Einnahme", "")),  # Updated to Pro Einnahme
+                clean_text(s.get("Pro Einnahme", "")),
                 clean_text(s.get("Nüchtern", "")),
                 clean_text(s.get("Morgens", "")),
                 clean_text(s.get("Mittags", "")),
@@ -1107,6 +1117,12 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             line_height = 8
             comment_lines = int(pdf.get_string_width(comment_text) / (widths[-1] - 2)) + 1 if comment_text else 1
             row_height = max(line_height, line_height * comment_lines)
+
+            # Check if we need a new page
+            if pdf.get_y() + row_height > pdf.page_break_trigger:
+                pdf.add_page()
+                table_header()  # Repeat header on new page
+                row_count = 0
 
             for i, (w, text, header) in enumerate(zip(widths[:-1], row[:-1], headers[:-1])):
                 align = "L" if i == 0 else "C"
@@ -1121,6 +1137,8 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             pdf.multi_cell(widths[-1], line_height, comment_text, 1)
             pdf.set_xy(x + widths[-1], y)
             pdf.ln(row_height)
+            
+            row_count += 1
 
     elif tab_name == "THERAPIEPLAN" and isinstance(supplements, dict):
         # For Therapieplan tab - includes Diagnostik & Überprüfung + Therapieformen
