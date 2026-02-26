@@ -1066,82 +1066,98 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
     pdf.multi_cell(0, 5, kontrolltermine_text, 0, "L")
     pdf.ln(3)
 
-    # Content based on tab
+    # ========== CONTENT BASED ON TAB ==========
     if tab_name == "NEM" and isinstance(supplements, list):
-        # Supplements Table
+        # Supplements Table - SINGLE CLEAN IMPLEMENTATION
         table_width = 277
         pdf.set_fill_color(38, 96, 65)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", "B", 12)
         pdf.cell(table_width, 8, "NAHRUNGSERGÄNZUNGSMITTEL (NEM) VO", 0, 1, "L", True)
 
-        headers = ["Supplement", "Gesamt-dosierung", "Darreichungsform", "Pro Einnahme", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
-        base_widths = [50, 20, 35, 20, 18, 18, 18, 18, 18]
+        headers = ["Supplement", "Gesamt-dosierung", "Darreichungsform", "Pro Einnahme", 
+                "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
+        
+        # Adjusted widths for better fit with larger font
+        base_widths = [55, 24, 40, 24, 18, 18, 18, 18, 18]
         used_width = sum(base_widths)
         comment_width = table_width - used_width
         widths = base_widths + [comment_width]
 
-        # Store header row for repeating on new pages
-        def table_header():
-            pdf.set_fill_color(38, 96, 65)
-            pdf.set_text_color(255, 255, 255)
-            pdf.set_font("Helvetica", "B", 10)
-            for w, h in zip(widths, headers):
-                pdf.cell(w, 8, h, 1, 0, "C", True)
-            pdf.ln()
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_font("Helvetica", "", 9)
-
-        # Print initial header
-        table_header()
-
-        # Keep track of row count for page breaks
-        row_count = 0
-        rows_per_page = 25  # Adjust based on your font size and page layout
+        # Print header - LARGER FONT
+        pdf.set_fill_color(38, 96, 65)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 11)  # Increased from 9 to 11
+        for w, h in zip(widths, headers):
+            pdf.cell(w, 8, h, 1, 0, "C", True)
+        pdf.ln()
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Helvetica", "", 10)  # Increased from 8 to 10
 
         for s in supplements:
-            row = [
+            # Prepare cell contents
+            cells = [
                 clean_text(s.get("name", "")),
                 clean_text(s.get("Gesamt-dosierung", "")),
                 clean_text(s.get("Darreichungsform", "")),
                 clean_text(s.get("Pro Einnahme", "")),
-                clean_text(s.get("Nüchtern", "")),
-                clean_text(s.get("Morgens", "")),
-                clean_text(s.get("Mittags", "")),
-                clean_text(s.get("Abends", "")),
-                clean_text(s.get("Nachts", "")),
+                f"{clean_text(s.get('Nüchtern', ''))}x" if s.get("Nüchtern", "").strip() else "",
+                f"{clean_text(s.get('Morgens', ''))}x" if s.get("Morgens", "").strip() else "",
+                f"{clean_text(s.get('Mittags', ''))}x" if s.get("Mittags", "").strip() else "",
+                f"{clean_text(s.get('Abends', ''))}x" if s.get("Abends", "").strip() else "",
+                f"{clean_text(s.get('Nachts', ''))}x" if s.get("Nachts", "").strip() else "",
                 clean_text(s.get("Kommentar", ""))
             ]
 
-            comment_text = row[-1] or ""
-            line_height = 8
-            comment_lines = int(pdf.get_string_width(comment_text) / (widths[-1] - 2)) + 1 if comment_text else 1
-            row_height = max(line_height, line_height * comment_lines)
+            # Calculate row height based on tallest cell
+            line_height = 5  # Increased from 4 to 5
+            max_lines = 1
+            
+            # Check each cell to see how many lines it needs
+            for cell, width in zip(cells, widths):
+                if cell:
+                    cell_width = pdf.get_string_width(cell)
+                    needed_lines = max(1, int(cell_width / (width - 4)) + 1)
+                    max_lines = max(max_lines, needed_lines)
+            
+            row_height = line_height * max_lines
 
-            # Check if we need a new page
+            # Check page break
             if pdf.get_y() + row_height > pdf.page_break_trigger:
                 pdf.add_page()
-                table_header()  # Repeat header on new page
-                row_count = 0
+                # Repeat header - LARGER FONT
+                pdf.set_fill_color(38, 96, 65)
+                pdf.set_text_color(255, 255, 255)
+                pdf.set_font("Helvetica", "B", 11)
+                for w, h in zip(widths, headers):
+                    pdf.cell(w, 8, h, 1, 0, "C", True)
+                pdf.ln()
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font("Helvetica", "", 10)
 
-            for i, (w, text, header) in enumerate(zip(widths[:-1], row[:-1], headers[:-1])):
-                align = "L" if i == 0 else "C"
-                if header in ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]:
-                    display_text = f"{text}x" if str(text).strip() else ""
-                else:
-                    display_text = str(text)
-                pdf.cell(w, row_height, display_text, 1, 0, align)
-
-            x = pdf.get_x()
-            y = pdf.get_y()
-            pdf.multi_cell(widths[-1], line_height, comment_text, 1)
-            pdf.set_xy(x + widths[-1], y)
-            pdf.ln(row_height)
+            # Store starting position
+            start_x = pdf.get_x()
+            start_y = pdf.get_y()
             
-            row_count += 1
+            # Print all cells with wrapping for long text
+            for i, (cell, width) in enumerate(zip(cells, widths)):
+                x = pdf.get_x()
+                align = 'L' if i == 0 else 'C'
+                
+                if cell and pdf.get_string_width(cell) > width - 4:
+                    # Need wrapping
+                    pdf.set_xy(x, start_y)
+                    pdf.multi_cell(width, line_height, cell, 1, align)
+                    pdf.set_xy(x + width, start_y)
+                else:
+                    # Single line
+                    pdf.cell(width, row_height, cell, 1, 0, align)
+            
+            # Move to next row
+            pdf.set_xy(start_x, start_y + row_height)
 
     elif tab_name == "THERAPIEPLAN" and isinstance(supplements, dict):
-        # For Therapieplan tab - includes Diagnostik & Überprüfung + Therapieformen
+        # For Therapieplan tab
         pdf.set_font("Helvetica", "B", 14)
         pdf.set_fill_color(38, 96, 65)
         pdf.set_text_color(255, 255, 255)
@@ -1225,7 +1241,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             "barre": "Barre Mobility – Bewegungsapparat in Balance (150€)"
         }
         
-        # Define which keys belong to which section in Therapieplan tab
+        # Define which keys belong to which section
         section_keys = {
             "Diagnostik & Überprüfung": [
                 "zaehne", "zaehne_zu_pruefen", "lab_imd", "lab_mmd", "lab_nextgen", 
@@ -1259,15 +1275,12 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                     value = supplements[key]
                     if value:
                         has_items_in_section = True
-                        label = label_mapping.get(key, key)  # Get human-readable label
+                        label = label_mapping.get(key, key)
                         
-                        # For boolean True values (checkboxes that are checked)
                         if isinstance(value, bool) and value:
                             pdf.cell(0, 6, f"- {clean_text(label)}", 0, 1)
-                        # For string values (text inputs)
                         elif isinstance(value, str) and value.strip():
                             pdf.cell(0, 6, f"- {clean_text(label)}: {clean_text(value)}", 0, 1)
-                        # For list values (multiselects)
                         elif isinstance(value, list) and value:
                             cleaned_values = [clean_text(str(v)) for v in value]
                             pdf.cell(0, 6, f"- {clean_text(label)}: {', '.join(cleaned_values)}", 0, 1)
@@ -1275,7 +1288,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             if not has_items_in_section:
                 pdf.cell(0, 6, "- Keine Angaben", 0, 1)
             
-            pdf.ln(3)  # Add some space between sections
+            pdf.ln(3)
 
     elif tab_name == "INFUSIONSTHERAPIE" and isinstance(supplements, dict):
         # For Infusionstherapie tab
@@ -1345,16 +1358,13 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             "therapie_dauer": "Dauer (Wochen/Monate)"
         }
         
-        # Define all infusion keys for a single section
+        # Define all infusion keys
         infusion_keys = [
-            # RevitaClinic Infusionen
             "revita_immune", "revita_immune_plus", "revita_heal", "revita_bludder",
             "revita_ferro", "revita_energy", "revita_focus", "revita_nad",
             "revita_relax", "revita_fit", "revita_hangover", "revita_beauty",
             "revita_antiaging", "revita_detox", "revita_chelate", "revita_liver",
             "revita_leakygut", "revita_infection", "revita_joint",
-            
-            # Standard Infusionen
             "mito_energy", "schwermetalltest", "procain_basen", "procain_2percent",
             "artemisinin", "perioperative", "detox_standard", "detox_maxi",
             "aufbauinfusion", "infektions_infusion", "immun_booster", "oxyvenierung",
@@ -1378,15 +1388,12 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                 value = supplements[key]
                 if value:
                     has_items_in_section = True
-                    label = label_mapping.get(key, key)  # Get human-readable label
+                    label = label_mapping.get(key, key)
                     
-                    # For boolean True values (checkboxes that are checked)
                     if isinstance(value, bool) and value:
                         pdf.cell(0, 6, f"- {clean_text(label)}", 0, 1)
-                    # For string values (text inputs)
                     elif isinstance(value, str) and value.strip():
                         pdf.cell(0, 6, f"- {clean_text(label)}: {clean_text(value)}", 0, 1)
-                    # For list values (multiselects)
                     elif isinstance(value, list) and value:
                         cleaned_values = [clean_text(str(v)) for v in value]
                         pdf.cell(0, 6, f"- {clean_text(label)}: {', '.join(cleaned_values)}", 0, 1)
@@ -1394,10 +1401,10 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         if not has_items_in_section:
             pdf.cell(0, 6, "- Keine Angaben", 0, 1)
         
-        pdf.ln(3)  # Add some space
+        pdf.ln(3)
 
     else:
-        # Fallback for unknown tab or data format
+        # Fallback
         pdf.set_font("Helvetica", "B", 14)
         pdf.set_fill_color(38, 96, 65)
         pdf.set_text_color(255, 255, 255)
@@ -1408,8 +1415,9 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(0, 6, "Keine Daten verfügbar.", 0, 1)
     
-    return pdf.output(dest="S").encode('latin-1')  # or 'utf-8'
-        
+    return pdf.output(dest="S").encode('latin-1')
+    
+
 # --- Main app ---
 def main():
     conn = get_conn()
@@ -1870,7 +1878,7 @@ def main():
                 .sticky-header {
                     background-color: #f8f9fa;
                     padding: 8px 8;
-                    border-bottom: 2px solid rgb(38, 96, 65);
+                    border-bottom: 0px solid rgb(38, 96, 65);
                     margin-bottom: 5px;
                     border-radius: 4px 4px 0 0;
                 }
@@ -1914,14 +1922,14 @@ def main():
                         "½", "¼", "¾", "1½", "2½", "g", "mg", "EL", "TL", "ML", "Tr"]
 
                 # -------- STICKY HEADER ROW --------
-                st.markdown('<div class="sticky-header">', unsafe_allow_html=True)
+                #st.markdown('<div class="sticky-header">', unsafe_allow_html=True)
                 header_cols = st.columns([2.3, 0.8, 1.2, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 2])
                 headers = ["Supplement", "Gesamt-dosierung", "Darreichungsform", "Pro Einnahme",
                         "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
 
                 for col, text in zip(header_cols, headers):
                     col.markdown(f"**{text}**")
-                st.markdown('</div>', unsafe_allow_html=True)
+                #st.markdown('</div>', unsafe_allow_html=True)
 
                 # -------- SCROLLABLE CONTAINER for categories and supplements --------
                 # Using Streamlit's native container with height parameter
