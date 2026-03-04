@@ -1,4 +1,16 @@
+import os
+import sqlite3
+import pandas as pd
+import streamlit as st
+from fpdf import FPDF
+from datetime import date
+from PIL import Image
+import time
+import base64
 
+st.set_page_config("THERAPIEKONZEPT", layout="wide")
+
+# --- Database ---
 DB_PATH = "app.db"
 TIMES = ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]
 
