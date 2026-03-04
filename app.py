@@ -1408,7 +1408,10 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(0, 6, "Keine Daten verfügbar.", 0, 1)
     
-    return pdf.output(dest="S").encode('latin-1')  # or 'utf-8'
+    from io import BytesIO
+    pdf_bytes = BytesIO()
+    pdf.output(pdf_bytes)
+    return pdf_bytes.getvalue()
         
 # --- Main app ---
 def main():
