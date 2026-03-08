@@ -2,6 +2,7 @@ streamlit
 fpdf2
 pandas
 pillow
+supabase
 
 #openai-whisper==20231117
 #torch==2.1.0
