@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import pandas as pd
 import streamlit as st
 from fpdf import FPDF
@@ -7,285 +6,39 @@ from datetime import date
 from PIL import Image
 import time
 import base64
+from supabase_db import SupabaseDB
 
 st.set_page_config("THERAPIEKONZEPT", layout="wide")
 
 # --- Database ---
-DB_PATH = "app.db"
-TIMES = ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]
+# --- Database ---
+@st.cache_resource
+def get_db():
+    return SupabaseDB()
 
-def get_conn():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+# Initialize database connection
+db = get_db()
 
-def fetch_supplements(conn):
-    """Get supplements with categories - FIXED ORDER"""
-    return pd.read_sql("""
-        SELECT * FROM supplements 
-        ORDER BY 
-            CASE 
-                WHEN id LIKE 'CAT%' THEN category
-                ELSE category
-            END,
-            CASE 
-                WHEN id LIKE 'CAT%' THEN 0  -- Categories first
-                ELSE 1  -- Supplements after
-            END,
-            id
-    """, conn)
+def fetch_supplements():
+    """Get supplements with categories"""
+    return db.fetch_supplements()
 
-def fetch_patient_names(conn):
+def fetch_patient_names():
     """Get all patient names for autocomplete"""
-    return pd.read_sql("SELECT patient_name FROM patients ORDER BY patient_name", conn)
+    df = db.fetch_patient_names()
+    return df
 
-def save_patient_data(conn, patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data):
+def save_patient_data(patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data):
     """Save patient data and all prescriptions to database"""
-    try:
-        cursor = conn.cursor()
-        
-        # First, get or create patient ID
-        cursor.execute("SELECT id FROM patients WHERE patient_name = ?", (patient_data["patient"],))
-        result = cursor.fetchone()
-        
-        if result:
-            patient_id = result[0]
-            # Update existing patient
-            update_sql = """
-            UPDATE patients SET 
-                geburtsdatum=?, geschlecht=?, groesse=?, gewicht=?, 
-                therapiebeginn=?, dauer=?, tw_besprochen=?, allergie=?, diagnosen=?
-            WHERE id=?
-            """
-            cursor.execute(update_sql, (
-                patient_data["geburtsdatum"], patient_data["geschlecht"], 
-                patient_data["groesse"], patient_data["gewicht"],
-                patient_data["therapiebeginn"], patient_data["dauer"],
-                patient_data["tw_besprochen"], patient_data["allergie"], 
-                patient_data["diagnosen"], patient_id
-            ))
-        else:
-            # Insert new patient
-            insert_sql = """
-            INSERT INTO patients 
-            (patient_name, geburtsdatum, geschlecht, groesse, gewicht, therapiebeginn, dauer, tw_besprochen, allergie, diagnosen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            cursor.execute(insert_sql, (
-                patient_data["patient"], patient_data["geburtsdatum"], 
-                patient_data["geschlecht"], patient_data["groesse"], 
-                patient_data["gewicht"], patient_data["therapiebeginn"],
-                patient_data["dauer"], patient_data["tw_besprochen"],
-                patient_data["allergie"], patient_data["diagnosen"]
-            ))
-            patient_id = cursor.lastrowid
-        
-        # Delete existing prescriptions
-        cursor.execute("DELETE FROM patient_prescriptions WHERE patient_id = ?", (patient_id,))
-        
-        # Insert NEM prescriptions
-        nem_sql = """
-        INSERT INTO patient_prescriptions 
-        (patient_id, supplement_id, dauer, darreichungsform, dosierung, nuechtern, morgens, mittags, abends, nachts, kommentar)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        
-        for prescription in nem_prescriptions:
-            cursor.execute("SELECT id FROM supplements WHERE name = ?", (prescription["name"],))
-            supplement_row = cursor.fetchone()
-            if supplement_row:
-                supplement_id = supplement_row[0]
-                # Convert all values to strings with proper defaults
-                prescription_values = (
-                    patient_id,
-                    supplement_id,
-                    str(prescription.get("Gesamt-dosierung", "")),  # Updated to Gesamt-dosierung
-                    str(prescription.get("Darreichungsform", "")),
-                    str(prescription.get("Pro Einnahme", "")),  # Updated to Pro Einnahme
-                    str(prescription.get("Nüchtern", "")),
-                    str(prescription.get("Morgens", "")),
-                    str(prescription.get("Mittags", "")),
-                    str(prescription.get("Abends", "")),
-                    str(prescription.get("Nachts", "")),
-                    str(prescription.get("Kommentar", ""))
-                )
-                cursor.execute(nem_sql, prescription_values)
-        
-        # Create tables for other tab data if they don't exist
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS patient_therapieplan (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER UNIQUE,
-            data TEXT,
-            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
-        )
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS patient_ernaehrung (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER UNIQUE,
-            data TEXT,
-            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
-        )
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS patient_infusion (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER UNIQUE,
-            data TEXT,
-            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
-        )
-        """)
-        
-        # Save other tab data
-        # Therapieplan
-        cursor.execute("DELETE FROM patient_therapieplan WHERE patient_id = ?", (patient_id,))
-        therapieplan_sql = """
-        INSERT INTO patient_therapieplan 
-        (patient_id, data)
-        VALUES (?, ?)
-        """
-        cursor.execute(therapieplan_sql, (patient_id, str(therapieplan_data)))
-        
-        # Ernährung
-        cursor.execute("DELETE FROM patient_ernaehrung WHERE patient_id = ?", (patient_id,))
-        ernaehrung_sql = """
-        INSERT INTO patient_ernaehrung 
-        (patient_id, data)
-        VALUES (?, ?)
-        """
-        cursor.execute(ernaehrung_sql, (patient_id, str(ernaehrung_data)))
-        
-        # Infusion
-        cursor.execute("DELETE FROM patient_infusion WHERE patient_id = ?", (patient_id,))
-        infusion_sql = """
-        INSERT INTO patient_infusion 
-        (patient_id, data)
-        VALUES (?, ?)
-        """
-        cursor.execute(infusion_sql, (patient_id, str(infusion_data)))
-        
-        conn.commit()
-        return True
-    except Exception as e:
-        conn.rollback()
-        st.error(f"Fehler beim Speichern: {str(e)}")
-        return False
+    return db.save_patient_data(patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data)
 
-def delete_patient_data(conn, patient_name):
+def delete_patient_data(patient_name):
     """Delete patient and all their data"""
-    try:
-        cursor = conn.cursor()
-        
-        # Get patient ID
-        cursor.execute("SELECT id FROM patients WHERE patient_name = ?", (patient_name,))
-        result = cursor.fetchone()
-        
-        if result:
-            patient_id = result[0]
-            # Delete all related data (CASCADE will handle patient_prescriptions)
-            cursor.execute("DELETE FROM patient_therapieplan WHERE patient_id = ?", (patient_id,))
-            cursor.execute("DELETE FROM patient_ernaehrung WHERE patient_id = ?", (patient_id,))
-            cursor.execute("DELETE FROM patient_infusion WHERE patient_id = ?", (patient_id,))
-            # Delete patient (CASCADE will delete prescriptions)
-            cursor.execute("DELETE FROM patients WHERE id = ?", (patient_id,))
-            conn.commit()
-            return True
-        return False
-    except Exception as e:
-        conn.rollback()
-        st.error(f"Fehler beim Löschen: {str(e)}")
-        return False
+    return db.delete_patient_data(patient_name)
 
-def load_patient_data(conn, patient_name):
+def load_patient_data(patient_name):
     """Load patient data and all prescriptions from database"""
-    try:
-        # Load patient data
-        patient_sql = "SELECT * FROM patients WHERE patient_name = ?"
-        patient_df = pd.read_sql(patient_sql, conn, params=(patient_name,))
-        
-        if patient_df.empty:
-            # Patient doesn't exist - return empty data
-            return {}, [], {}, {}, {}
-        
-        patient_data = patient_df.iloc[0].to_dict()
-        patient_id = patient_data["id"]
-        
-        # Load NEM prescriptions
-        nem_sql = """
-        SELECT s.name, pp.dauer, pp.darreichungsform, pp.dosierung, pp.nuechtern, pp.morgens, 
-               pp.mittags, pp.abends, pp.nachts, pp.kommentar
-        FROM patient_prescriptions pp
-        JOIN supplements s ON pp.supplement_id = s.id
-        WHERE pp.patient_id = ?
-        """
-        nem_df = pd.read_sql(nem_sql, conn, params=(patient_id,))
-        
-        nem_prescriptions = []
-        if not nem_df.empty:
-            for _, row in nem_df.iterrows():
-                # Ensure all fields are properly converted to strings
-                prescription = {
-                    "name": str(row["name"]) if pd.notna(row["name"]) else "",
-                    "Gesamt-dosierung": str(row["dauer"]) if pd.notna(row['dauer']) else "",  # Updated to Gesamt-dosierung
-                    "Darreichungsform": str(row["darreichungsform"]) if pd.notna(row["darreichungsform"]) else "",
-                    "Pro Einnahme": str(row["dosierung"]) if pd.notna(row["dosierung"]) else "",  # Updated to Pro Einnahme
-                    "Nüchtern": str(row["nuechtern"]) if pd.notna(row["nuechtern"]) else "",
-                    "Morgens": str(row["morgens"]) if pd.notna(row["morgens"]) else "",
-                    "Mittags": str(row["mittags"]) if pd.notna(row["mittags"]) else "",
-                    "Abends": str(row["abends"]) if pd.notna(row["abends"]) else "",
-                    "Nachts": str(row["nachts"]) if pd.notna(row["nachts"]) else "",
-                    "Kommentar": str(row["kommentar"]) if pd.notna(row["kommentar"]) else ""
-                }
-                nem_prescriptions.append(prescription)
-        
-        # Create tables if they don't exist
-        cursor = conn.cursor()
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS patient_therapieplan (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER UNIQUE,
-            data TEXT,
-            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
-        )
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS patient_ernaehrung (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER UNIQUE,
-            data TEXT,
-            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
-        )
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS patient_infusion (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER UNIQUE,
-            data TEXT,
-            FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
-        )
-        """)
-        conn.commit()
-        
-        # Load other tab data
-        therapieplan_sql = "SELECT data FROM patient_therapieplan WHERE patient_id = ?"
-        therapieplan_df = pd.read_sql(therapieplan_sql, conn, params=(patient_id,))
-        therapieplan_data = eval(therapieplan_df.iloc[0]["data"]) if not therapieplan_df.empty else {}
-        
-        ernaehrung_sql = "SELECT data FROM patient_ernaehrung WHERE patient_id = ?"
-        ernaehrung_df = pd.read_sql(ernaehrung_sql, conn, params=(patient_id,))
-        ernaehrung_data = eval(ernaehrung_df.iloc[0]["data"]) if not ernaehrung_df.empty else {}
-        
-        infusion_sql = "SELECT data FROM patient_infusion WHERE patient_id = ?"
-        infusion_df = pd.read_sql(infusion_sql, conn, params=(patient_id,))
-        infusion_data = eval(infusion_df.iloc[0]["data"]) if not infusion_df.empty else {}
-        
-        return patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data
-    except Exception as e:
-        st.error(f"Fehler beim Laden: {str(e)}")
-        return None, [], {}, {}, {}
+    return db.load_patient_data(patient_name)
 
 # Replace the existing CSS with this updated version:
 st.markdown("""
@@ -682,14 +435,14 @@ DEFAULT_FORMS = {
     "SuperPatches Packung 28er": "Pflaster"
 }
 
-def patient_inputs(conn):
+def patient_inputs():
     from datetime import date
     import streamlit as st
 
     # --------------------------------------------------
     # Get patient names
     # --------------------------------------------------
-    patient_names_df = fetch_patient_names(conn)
+    patient_names_df = fetch_patient_names()
     patient_names = patient_names_df["patient_name"].tolist() if not patient_names_df.empty else []
 
     # --------------------------------------------------
@@ -722,11 +475,12 @@ def patient_inputs(conn):
     # --------------------------------------------------
     if st.session_state.clicked_suggestion:
         name = st.session_state.clicked_suggestion
-
-        result = load_patient_data(conn, name)
-        if result[0]:
+        st.write(f"Loading patient: {name}")  # Debug output
+        
+        result = load_patient_data(name)
+        if result[0] is not None:
             patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data = result
-
+            
             st.session_state.patient_data = patient_data
             st.session_state.nem_prescriptions = nem_prescriptions
             st.session_state.therapieplan_data = therapieplan_data
@@ -736,18 +490,25 @@ def patient_inputs(conn):
             st.session_state.last_loaded_patient = name
             st.session_state.display_patient_name = name
             st.session_state.just_loaded_patient = True
-
+            st.session_state.current_patient_input = name
+            
+            st.success(f"✅ Patient '{name}' geladen!")
+        else:
+            st.error(f"Fehler beim Laden von Patient '{name}'")
+        
         st.session_state.clicked_suggestion = None
         st.rerun()
 
     # --------------------------------------------------
-    # Determine text_input value
+    # Text input
     # --------------------------------------------------
-    display_value = (
-        st.session_state.display_patient_name
-        if st.session_state.display_patient_name
-        else st.session_state.patient_data.get("patient", "")
-    )
+    # Determine the value to display
+    if st.session_state.just_loaded_patient:
+        display_value = st.session_state.display_patient_name
+    elif st.session_state.display_patient_name:
+        display_value = st.session_state.display_patient_name
+    else:
+        display_value = st.session_state.patient_data.get("patient", "")
 
     typed = st.text_input(
         "Geben Sie den Namen ein und drücken Sie die Eingabetaste, um Vorschläge zu suchen.",
@@ -761,6 +522,8 @@ def patient_inputs(conn):
     # --------------------------------------------------
     if typed != st.session_state.current_patient_input:
         st.session_state.current_patient_input = typed
+        if not st.session_state.just_loaded_patient:
+            st.session_state.display_patient_name = typed
 
         # User starts typing a NEW patient → clear old data
         if (
@@ -774,76 +537,97 @@ def patient_inputs(conn):
             st.session_state.ernaehrung_data = {}
             st.session_state.infusion_data = {}
             st.session_state.last_loaded_patient = None
-            st.session_state.display_patient_name = ""
             st.session_state.just_loaded_patient = False
             st.rerun()
 
-    st.session_state.display_patient_name = typed
-
     # --------------------------------------------------
-    # Suggestions (ONLY if not just loaded)
+    # Suggestions
     # --------------------------------------------------
     suggestions = [n for n in patient_names if typed and typed.lower() in n.lower()]
 
     if typed and suggestions and not st.session_state.just_loaded_patient:
         st.write("**Vorschläge:**")
-        for name in suggestions[:7]:
-            if st.button(name, key=f"suggest_{name}"):
-                st.session_state.clicked_suggestion = name
-                st.rerun()
+        cols = st.columns(3)
+        for i, name in enumerate(suggestions[:9]):
+            col_idx = i % 3
+            with cols[col_idx]:
+                if st.button(name, key=f"suggest_{name}", use_container_width=True):
+                    st.session_state.clicked_suggestion = name
+                    st.rerun()
 
     # --------------------------------------------------
     # Auto-load on Enter (exact match)
     # --------------------------------------------------
-    patient_name_input = typed
-
     if (
-        patient_name_input
-        and patient_name_input in patient_names
-        and patient_name_input != st.session_state.last_loaded_patient
+        typed
+        and typed in patient_names
+        and typed != st.session_state.last_loaded_patient
         and not st.session_state.just_loaded_patient
     ):
-        result = load_patient_data(conn, patient_name_input)
-        if result[0]:
+        st.write(f"Auto-loading patient: {typed}")  # Debug output
+        
+        result = load_patient_data(typed)
+        if result[0] is not None:
             patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data = result
-
+            
             st.session_state.patient_data = patient_data
             st.session_state.nem_prescriptions = nem_prescriptions
             st.session_state.therapieplan_data = therapieplan_data
             st.session_state.ernaehrung_data = ernaehrung_data
             st.session_state.infusion_data = infusion_data
 
-            st.session_state.last_loaded_patient = patient_name_input
-            st.session_state.display_patient_name = patient_name_input
+            st.session_state.last_loaded_patient = typed
+            st.session_state.display_patient_name = typed
+            st.session_state.current_patient_input = typed
             st.session_state.just_loaded_patient = True
+            
+            st.success(f"✅ Patient '{typed}' geladen!")
             st.rerun()
+        else:
+            st.error(f"Fehler beim Laden von Patient '{typed}'")
 
     # Reset flag AFTER UI is stable
     if st.session_state.just_loaded_patient:
         st.session_state.just_loaded_patient = False
 
     # --------------------------------------------------
-    # Defaults
+    # Defaults for form fields
     # --------------------------------------------------
     pdata = st.session_state.patient_data or {}
 
-    default_geburtsdatum = pdata.get("geburtsdatum", date.today())
+    def parse_date(date_val):
+        if isinstance(date_val, str):
+            try:
+                return date.fromisoformat(date_val)
+            except:
+                return date.today()
+        return date_val if isinstance(date_val, date) else date.today()
+
+    default_geburtsdatum = parse_date(pdata.get("geburtsdatum", date.today()))
     default_geschlecht = pdata.get("geschlecht", "M")
-    default_groesse = int(pdata.get("groesse", 0))
-    default_gewicht = int(pdata.get("gewicht", 0))
-    default_therapiebeginn = pdata.get("therapiebeginn", date.today())
-    default_dauer_value = pdata.get("dauer", 6)
+    default_groesse = int(pdata.get("groesse", 0)) if pdata.get("groesse") else 0
+    default_gewicht = int(pdata.get("gewicht", 0)) if pdata.get("gewicht") else 0
+    default_therapiebeginn = parse_date(pdata.get("therapiebeginn", date.today()))
+    
+    dauer_value = pdata.get("dauer", 6)
+    if isinstance(dauer_value, str):
+        try:
+            default_dauer_value = int(dauer_value)
+        except:
+            default_dauer_value = 6
+    else:
+        default_dauer_value = dauer_value
+    
     default_tw_besprochen = pdata.get("tw_besprochen", "Ja")
     default_allergie = pdata.get("allergie", "")
     default_diagnosen = pdata.get("diagnosen", "")
     
-    # Kontrolltermine defaults
     default_kontrolltermin_4 = pdata.get("kontrolltermin_4", False)
     default_kontrolltermin_12 = pdata.get("kontrolltermin_12", False)
     default_kontrolltermin_kommentar = pdata.get("kontrolltermin_kommentar", "")
 
     # --------------------------------------------------
-    # Layout
+    # Form fields layout
     # --------------------------------------------------
     c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
 
@@ -882,7 +666,7 @@ def patient_inputs(conn):
         dauer = st.selectbox(
             "Dauer (Monate)",
             list(range(1, 13)),
-            index=default_dauer_value - 1,
+            index=default_dauer_value - 1 if 1 <= default_dauer_value <= 12 else 5,
             key="dauer_input"
         )
 
@@ -906,7 +690,7 @@ def patient_inputs(conn):
     )
 
     # --------------------------------------------------
-    # Kontrolltermine (now available for all tabs)
+    # Kontrolltermine
     # --------------------------------------------------
     st.markdown("---")
     st.markdown("#### Kontrolltermine")
@@ -920,10 +704,10 @@ def patient_inputs(conn):
     kontrolltermin_kommentar = st.text_input("Kommentar:", value=default_kontrolltermin_kommentar, key="kontrolltermin_kommentar_input")
 
     # --------------------------------------------------
-    # RETURN (with Kontrolltermine included)
+    # RETURN
     # --------------------------------------------------
     data = {
-        "patient": patient_name_input,
+        "patient": typed,
         "geburtsdatum": geburtsdatum,
         "geschlecht": geschlecht,
         "groesse": groesse,
@@ -933,14 +717,12 @@ def patient_inputs(conn):
         "tw_besprochen": tw_besprochen,
         "allergie": bekannte_allergie,
         "diagnosen": diagnosen,
-        # Kontrolltermine
         "kontrolltermin_4": kontrolltermin_4,
         "kontrolltermin_12": kontrolltermin_12,
         "kontrolltermin_kommentar": kontrolltermin_kommentar,
     }
 
-    return data
-
+    return data    
 # --- Helpers ---
 def _fmt_dt(d):
     try:
@@ -1066,98 +848,82 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
     pdf.multi_cell(0, 5, kontrolltermine_text, 0, "L")
     pdf.ln(3)
 
-    # ========== CONTENT BASED ON TAB ==========
+    # Content based on tab
     if tab_name == "NEM" and isinstance(supplements, list):
-        # Supplements Table - SINGLE CLEAN IMPLEMENTATION
+        # Supplements Table
         table_width = 277
         pdf.set_fill_color(38, 96, 65)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", "B", 12)
         pdf.cell(table_width, 8, "NAHRUNGSERGÄNZUNGSMITTEL (NEM) VO", 0, 1, "L", True)
 
-        headers = ["Supplement", "Gesamt-dosierung", "Darreichungsform", "Pro Einnahme", 
-                "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
-        
-        # Adjusted widths for better fit with larger font
-        base_widths = [55, 24, 40, 24, 18, 18, 18, 18, 18]
+        headers = ["Supplement", "Gesamt-dosierung", "Darreichungsform", "Pro Einnahme", "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
+        base_widths = [50, 20, 35, 20, 18, 18, 18, 18, 18]
         used_width = sum(base_widths)
         comment_width = table_width - used_width
         widths = base_widths + [comment_width]
 
-        # Print header - LARGER FONT
-        pdf.set_fill_color(38, 96, 65)
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_font("Helvetica", "B", 11)  # Increased from 9 to 11
-        for w, h in zip(widths, headers):
-            pdf.cell(w, 8, h, 1, 0, "C", True)
-        pdf.ln()
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Helvetica", "", 10)  # Increased from 8 to 10
+        # Store header row for repeating on new pages
+        def table_header():
+            pdf.set_fill_color(38, 96, 65)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", "B", 10)
+            for w, h in zip(widths, headers):
+                pdf.cell(w, 8, h, 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Helvetica", "", 9)
+
+        # Print initial header
+        table_header()
+
+        # Keep track of row count for page breaks
+        row_count = 0
+        rows_per_page = 25  # Adjust based on your font size and page layout
 
         for s in supplements:
-            # Prepare cell contents
-            cells = [
+            row = [
                 clean_text(s.get("name", "")),
                 clean_text(s.get("Gesamt-dosierung", "")),
                 clean_text(s.get("Darreichungsform", "")),
                 clean_text(s.get("Pro Einnahme", "")),
-                f"{clean_text(s.get('Nüchtern', ''))}x" if s.get("Nüchtern", "").strip() else "",
-                f"{clean_text(s.get('Morgens', ''))}x" if s.get("Morgens", "").strip() else "",
-                f"{clean_text(s.get('Mittags', ''))}x" if s.get("Mittags", "").strip() else "",
-                f"{clean_text(s.get('Abends', ''))}x" if s.get("Abends", "").strip() else "",
-                f"{clean_text(s.get('Nachts', ''))}x" if s.get("Nachts", "").strip() else "",
+                clean_text(s.get("Nüchtern", "")),
+                clean_text(s.get("Morgens", "")),
+                clean_text(s.get("Mittags", "")),
+                clean_text(s.get("Abends", "")),
+                clean_text(s.get("Nachts", "")),
                 clean_text(s.get("Kommentar", ""))
             ]
 
-            # Calculate row height based on tallest cell
-            line_height = 5  # Increased from 4 to 5
-            max_lines = 1
-            
-            # Check each cell to see how many lines it needs
-            for cell, width in zip(cells, widths):
-                if cell:
-                    cell_width = pdf.get_string_width(cell)
-                    needed_lines = max(1, int(cell_width / (width - 4)) + 1)
-                    max_lines = max(max_lines, needed_lines)
-            
-            row_height = line_height * max_lines
+            comment_text = row[-1] or ""
+            line_height = 8
+            comment_lines = int(pdf.get_string_width(comment_text) / (widths[-1] - 2)) + 1 if comment_text else 1
+            row_height = max(line_height, line_height * comment_lines)
 
-            # Check page break
+            # Check if we need a new page
             if pdf.get_y() + row_height > pdf.page_break_trigger:
                 pdf.add_page()
-                # Repeat header - LARGER FONT
-                pdf.set_fill_color(38, 96, 65)
-                pdf.set_text_color(255, 255, 255)
-                pdf.set_font("Helvetica", "B", 11)
-                for w, h in zip(widths, headers):
-                    pdf.cell(w, 8, h, 1, 0, "C", True)
-                pdf.ln()
-                pdf.set_text_color(0, 0, 0)
-                pdf.set_font("Helvetica", "", 10)
+                table_header()  # Repeat header on new page
+                row_count = 0
 
-            # Store starting position
-            start_x = pdf.get_x()
-            start_y = pdf.get_y()
-            
-            # Print all cells with wrapping for long text
-            for i, (cell, width) in enumerate(zip(cells, widths)):
-                x = pdf.get_x()
-                align = 'L' if i == 0 else 'C'
-                
-                if cell and pdf.get_string_width(cell) > width - 4:
-                    # Need wrapping
-                    pdf.set_xy(x, start_y)
-                    pdf.multi_cell(width, line_height, cell, 1, align)
-                    pdf.set_xy(x + width, start_y)
+            for i, (w, text, header) in enumerate(zip(widths[:-1], row[:-1], headers[:-1])):
+                align = "L" if i == 0 else "C"
+                if header in ["Nüchtern", "Morgens", "Mittags", "Abends", "Nachts"]:
+                    display_text = f"{text}x" if str(text).strip() else ""
                 else:
-                    # Single line
-                    pdf.cell(width, row_height, cell, 1, 0, align)
+                    display_text = str(text)
+                pdf.cell(w, row_height, display_text, 1, 0, align)
+
+            x = pdf.get_x()
+            y = pdf.get_y()
+            pdf.multi_cell(widths[-1], line_height, comment_text, 1)
+            pdf.set_xy(x + widths[-1], y)
+            pdf.ln(row_height)
             
-            # Move to next row
-            pdf.set_xy(start_x, start_y + row_height)
+            row_count += 1
 
     elif tab_name == "THERAPIEPLAN" and isinstance(supplements, dict):
-        # For Therapieplan tab
+        # For Therapieplan tab - includes Diagnostik & Überprüfung + Therapieformen
         pdf.set_font("Helvetica", "B", 14)
         pdf.set_fill_color(38, 96, 65)
         pdf.set_text_color(255, 255, 255)
@@ -1241,7 +1007,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             "barre": "Barre Mobility – Bewegungsapparat in Balance (150€)"
         }
         
-        # Define which keys belong to which section
+        # Define which keys belong to which section in Therapieplan tab
         section_keys = {
             "Diagnostik & Überprüfung": [
                 "zaehne", "zaehne_zu_pruefen", "lab_imd", "lab_mmd", "lab_nextgen", 
@@ -1275,12 +1041,15 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                     value = supplements[key]
                     if value:
                         has_items_in_section = True
-                        label = label_mapping.get(key, key)
+                        label = label_mapping.get(key, key)  # Get human-readable label
                         
+                        # For boolean True values (checkboxes that are checked)
                         if isinstance(value, bool) and value:
                             pdf.cell(0, 6, f"- {clean_text(label)}", 0, 1)
+                        # For string values (text inputs)
                         elif isinstance(value, str) and value.strip():
                             pdf.cell(0, 6, f"- {clean_text(label)}: {clean_text(value)}", 0, 1)
+                        # For list values (multiselects)
                         elif isinstance(value, list) and value:
                             cleaned_values = [clean_text(str(v)) for v in value]
                             pdf.cell(0, 6, f"- {clean_text(label)}: {', '.join(cleaned_values)}", 0, 1)
@@ -1288,7 +1057,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             if not has_items_in_section:
                 pdf.cell(0, 6, "- Keine Angaben", 0, 1)
             
-            pdf.ln(3)
+            pdf.ln(3)  # Add some space between sections
 
     elif tab_name == "INFUSIONSTHERAPIE" and isinstance(supplements, dict):
         # For Infusionstherapie tab
@@ -1358,13 +1127,16 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             "therapie_dauer": "Dauer (Wochen/Monate)"
         }
         
-        # Define all infusion keys
+        # Define all infusion keys for a single section
         infusion_keys = [
+            # RevitaClinic Infusionen
             "revita_immune", "revita_immune_plus", "revita_heal", "revita_bludder",
             "revita_ferro", "revita_energy", "revita_focus", "revita_nad",
             "revita_relax", "revita_fit", "revita_hangover", "revita_beauty",
             "revita_antiaging", "revita_detox", "revita_chelate", "revita_liver",
             "revita_leakygut", "revita_infection", "revita_joint",
+            
+            # Standard Infusionen
             "mito_energy", "schwermetalltest", "procain_basen", "procain_2percent",
             "artemisinin", "perioperative", "detox_standard", "detox_maxi",
             "aufbauinfusion", "infektions_infusion", "immun_booster", "oxyvenierung",
@@ -1388,12 +1160,15 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                 value = supplements[key]
                 if value:
                     has_items_in_section = True
-                    label = label_mapping.get(key, key)
+                    label = label_mapping.get(key, key)  # Get human-readable label
                     
+                    # For boolean True values (checkboxes that are checked)
                     if isinstance(value, bool) and value:
                         pdf.cell(0, 6, f"- {clean_text(label)}", 0, 1)
+                    # For string values (text inputs)
                     elif isinstance(value, str) and value.strip():
                         pdf.cell(0, 6, f"- {clean_text(label)}: {clean_text(value)}", 0, 1)
+                    # For list values (multiselects)
                     elif isinstance(value, list) and value:
                         cleaned_values = [clean_text(str(v)) for v in value]
                         pdf.cell(0, 6, f"- {clean_text(label)}: {', '.join(cleaned_values)}", 0, 1)
@@ -1401,10 +1176,10 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         if not has_items_in_section:
             pdf.cell(0, 6, "- Keine Angaben", 0, 1)
         
-        pdf.ln(3)
+        pdf.ln(3)  # Add some space
 
     else:
-        # Fallback
+        # Fallback for unknown tab or data format
         pdf.set_font("Helvetica", "B", 14)
         pdf.set_fill_color(38, 96, 65)
         pdf.set_text_color(255, 255, 255)
@@ -1415,16 +1190,16 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(0, 6, "Keine Daten verfügbar.", 0, 1)
     
-    return pdf.output(dest="S").encode('latin-1')
-    
-
+    from io import BytesIO
+    # Return the PDF as bytes for Streamlit download
+    return pdf.output(dest='S').encode('latin-1')
+        
 # --- Main app ---
 def main():
-    conn = get_conn()
-    df = fetch_supplements(conn)
+    df = fetch_supplements()
 
     # --- Patient Info ---
-    patient = patient_inputs(conn)
+    patient = patient_inputs()
 
     # Initialize override keys for each supplement in session_state
     for _, row in df.iterrows():
@@ -1454,9 +1229,10 @@ def main():
         save_button = st.button("Alle Daten speichern", use_container_width=True, type="primary", key="save_button")
     with col2:
         # Delete button - only show if patient exists in database
-        patient_names = fetch_patient_names(conn)['patient_name'].tolist()
+        patient_names_df = fetch_patient_names()
+        patient_names = patient_names_df["patient_name"].tolist() if not patient_names_df.empty else []
         if patient["patient"] and patient["patient"] in patient_names:
-            if st.button("Patient löschen", use_container_width=True, type="secondary", key="delete_button"):
+            if st.button("Patient löschen", use_container_width=True, type="secondary"):
                 st.session_state.show_delete_confirmation = True
     
     # Show save success message if set
@@ -1476,7 +1252,7 @@ def main():
         col_confirm1, col_confirm2 = st.columns(2)
         with col_confirm1:
             if st.button("Ja, endgültig löschen", use_container_width=True, key="confirm_delete"):
-                if delete_patient_data(conn, patient["patient"]):
+                if delete_patient_data(patient["patient"]):
                     st.success(f"Patient '{patient['patient']}' wurde gelöscht!")
                     # Clear session state
                     st.session_state.patient_data = {}
@@ -1878,7 +1654,7 @@ def main():
                 .sticky-header {
                     background-color: #f8f9fa;
                     padding: 8px 8;
-                    border-bottom: 0px solid rgb(38, 96, 65);
+                    border-bottom: 2px solid rgb(38, 96, 65);
                     margin-bottom: 5px;
                     border-radius: 4px 4px 0 0;
                 }
@@ -1922,14 +1698,14 @@ def main():
                         "½", "¼", "¾", "1½", "2½", "g", "mg", "EL", "TL", "ML", "Tr"]
 
                 # -------- STICKY HEADER ROW --------
-                #st.markdown('<div class="sticky-header">', unsafe_allow_html=True)
+                st.markdown('<div class="sticky-header">', unsafe_allow_html=True)
                 header_cols = st.columns([2.3, 0.8, 1.2, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 2])
                 headers = ["Supplement", "Gesamt-dosierung", "Darreichungsform", "Pro Einnahme",
                         "Nüchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
 
                 for col, text in zip(header_cols, headers):
                     col.markdown(f"**{text}**")
-                #st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 
                 # -------- SCROLLABLE CONTAINER for categories and supplements --------
                 # Using Streamlit's native container with height parameter
@@ -2453,7 +2229,7 @@ def main():
             infusion_data = st.session_state.infusion_data
             
             # Save all data
-            if save_patient_data(conn, patient, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data):
+            if save_patient_data(patient, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data):
                 # Set success flag
                 st.session_state.show_save_success = True
                 st.session_state.last_loaded_patient = patient["patient"]

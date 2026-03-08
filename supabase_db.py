@@ -81,34 +81,31 @@ class SupabaseDB:
                 .eq('patient_name', patient_data_formatted['patient'])\
                 .execute()
             
+            # Prepare patient data including Kontrolltermine
+            patient_record = {
+                'patient_name': patient_data_formatted['patient'],
+                'geburtsdatum': patient_data_formatted['geburtsdatum'],
+                'geschlecht': patient_data_formatted['geschlecht'],
+                'groesse': patient_data_formatted['groesse'],
+                'gewicht': patient_data_formatted['gewicht'],
+                'therapiebeginn': patient_data_formatted['therapiebeginn'],
+                'dauer': patient_data_formatted['dauer'],
+                'tw_besprochen': patient_data_formatted['tw_besprochen'],
+                'allergie': patient_data_formatted['allergie'],
+                'diagnosen': patient_data_formatted['diagnosen'],
+                # Add Kontrolltermine fields
+                'kontrolltermin_4': patient_data_formatted.get('kontrolltermin_4', False),
+                'kontrolltermin_12': patient_data_formatted.get('kontrolltermin_12', False),
+                'kontrolltermin_kommentar': patient_data_formatted.get('kontrolltermin_kommentar', '')
+            }
+            
             if existing.data:
                 # Update existing patient
                 patient_id = existing.data[0]['id']
-                self.supabase.table('patients').update({
-                    'geburtsdatum': patient_data_formatted['geburtsdatum'],
-                    'geschlecht': patient_data_formatted['geschlecht'],
-                    'groesse': patient_data_formatted['groesse'],
-                    'gewicht': patient_data_formatted['gewicht'],
-                    'therapiebeginn': patient_data_formatted['therapiebeginn'],
-                    'dauer': patient_data_formatted['dauer'],
-                    'tw_besprochen': patient_data_formatted['tw_besprochen'],
-                    'allergie': patient_data_formatted['allergie'],
-                    'diagnosen': patient_data_formatted['diagnosen']
-                }).eq('id', patient_id).execute()
+                self.supabase.table('patients').update(patient_record).eq('id', patient_id).execute()
             else:
                 # Insert new patient
-                response = self.supabase.table('patients').insert({
-                    'patient_name': patient_data_formatted['patient'],
-                    'geburtsdatum': patient_data_formatted['geburtsdatum'],
-                    'geschlecht': patient_data_formatted['geschlecht'],
-                    'groesse': patient_data_formatted['groesse'],
-                    'gewicht': patient_data_formatted['gewicht'],
-                    'therapiebeginn': patient_data_formatted['therapiebeginn'],
-                    'dauer': patient_data_formatted['dauer'],
-                    'tw_besprochen': patient_data_formatted['tw_besprochen'],
-                    'allergie': patient_data_formatted['allergie'],
-                    'diagnosen': patient_data_formatted['diagnosen']
-                }).execute()
+                response = self.supabase.table('patients').insert(patient_record).execute()
                 patient_id = response.data[0]['id']
             
             # Delete existing prescriptions
@@ -233,10 +230,31 @@ class SupabaseDB:
                 .execute()
             infusion_data = json.loads(infusion_response.data[0]['data']) if infusion_response.data else {}
             
-            return patient, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data
+            # Format patient data to match the structure expected by the UI
+            patient_data = {
+                "patient": patient.get('patient_name', ''),
+                "geburtsdatum": patient.get('geburtsdatum', ''),
+                "geschlecht": patient.get('geschlecht', 'M'),
+                "groesse": patient.get('groesse', 0),
+                "gewicht": patient.get('gewicht', 0),
+                "therapiebeginn": patient.get('therapiebeginn', ''),
+                "dauer": patient.get('dauer', 6),
+                "tw_besprochen": patient.get('tw_besprochen', 'Ja'),
+                "allergie": patient.get('allergie', ''),
+                "diagnosen": patient.get('diagnosen', ''),
+                # Kontrolltermine - make sure these are included if they exist
+                "kontrolltermin_4": patient.get('kontrolltermin_4', False),
+                "kontrolltermin_12": patient.get('kontrolltermin_12', False),
+                "kontrolltermin_kommentar": patient.get('kontrolltermin_kommentar', '')
+            }
+            
+            # Return the formatted patient data, not the raw patient record
+            return patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data
             
         except Exception as e:
             print(f"❌ Error in load_patient_data: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None, [], {}, {}, {}
     
     def delete_patient_data(self, patient_name: str) -> bool:
@@ -248,18 +266,47 @@ class SupabaseDB:
                 .eq('patient_name', patient_name)\
                 .execute()
             
-            if patient_response.data:
-                patient_id = patient_response.data[0]['id']
-                
-                # Delete patient (CASCADE will handle related tables)
-                self.supabase.table('patients')\
-                    .delete()\
-                    .eq('id', patient_id)\
-                    .execute()
-                
-                return True
-            return False
+            if not patient_response.data:
+                print(f"Patient {patient_name} not found")
+                return False
+            
+            patient_id = patient_response.data[0]['id']
+            
+            # Delete in correct order (foreign key constraints)
+            # 1. Delete prescriptions
+            self.supabase.table('patient_prescriptions')\
+                .delete()\
+                .eq('patient_id', patient_id)\
+                .execute()
+            
+            # 2. Delete therapieplan
+            self.supabase.table('patient_therapieplan')\
+                .delete()\
+                .eq('patient_id', patient_id)\
+                .execute()
+            
+            # 3. Delete ernaehrung
+            self.supabase.table('patient_ernaehrung')\
+                .delete()\
+                .eq('patient_id', patient_id)\
+                .execute()
+            
+            # 4. Delete infusion
+            self.supabase.table('patient_infusion')\
+                .delete()\
+                .eq('patient_id', patient_id)\
+                .execute()
+            
+            # 5. Finally delete patient
+            self.supabase.table('patients')\
+                .delete()\
+                .eq('id', patient_id)\
+                .execute()
+            
+            return True
             
         except Exception as e:
             print(f"❌ Error in delete_patient_data: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False

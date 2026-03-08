@@ -1,4 +1,29 @@
+# At the very top of migrate_supplements_to_supabase.py
 import os
+import sys
+
+# Install toml if not already installed
+try:
+    import toml
+except ImportError:
+    print("Installing toml package...")
+    os.system("pip install toml")
+    import toml
+
+# Load credentials from .streamlit/secrets.toml
+secrets_path = os.path.join('.streamlit', 'secrets.toml')
+if os.path.exists(secrets_path):
+    secrets = toml.load(secrets_path)
+    os.environ['SUPABASE_URL'] = secrets['SUPABASE_URL']
+    os.environ['SUPABASE_KEY'] = secrets['SUPABASE_KEY']
+    print("✅ Loaded credentials from .streamlit/secrets.toml")
+else:
+    print("❌ Could not find .streamlit/secrets.toml")
+    print(f"Current directory: {os.getcwd()}")
+    print("Please make sure the file exists at: .streamlit/secrets.toml")
+    sys.exit(1)
+
+# Now import your SupabaseDB
 from supabase_db import SupabaseDB
 
 def migrate_supplements():
