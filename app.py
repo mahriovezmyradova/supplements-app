@@ -8,6 +8,7 @@ import time
 import base64
 from supabase_db import SupabaseDB
 
+
 st.set_page_config("THERAPIEKONZEPT", layout="wide")
 
 # --- Database ---
@@ -821,50 +822,42 @@ def patient_inputs():
     st.markdown("#### Patientendaten")
 
     # --------------------------------------------------
-    # Handle suggestion click BEFORE text_input
+    # Handle suggestion click
     # --------------------------------------------------
     if st.session_state.clicked_suggestion:
         name = st.session_state.clicked_suggestion
-        st.write(f"Loading patient: {name}")  # Debug output
-        
+
         result = load_patient_data(name)
-        if result[0] is not None:
+        if result[0]:
             patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data = result
-            
+
+            # Update ALL session state at once
             st.session_state.patient_data = patient_data
-            st.session_state.nem_prescriptions = nem_prescriptions
-            st.session_state.therapieplan_data = therapieplan_data
-            st.session_state.ernaehrung_data = ernaehrung_data
-            st.session_state.infusion_data = infusion_data
+            st.session_state.nem_prescriptions = nem_prescriptions if nem_prescriptions else []
+            st.session_state.therapieplan_data = therapieplan_data if therapieplan_data else {}
+            st.session_state.ernaehrung_data = ernaehrung_data if ernaehrung_data else {}
+            st.session_state.infusion_data = infusion_data if infusion_data else {}
 
             st.session_state.last_loaded_patient = name
             st.session_state.display_patient_name = name
             st.session_state.just_loaded_patient = True
-            st.session_state.current_patient_input = name
-            
-            st.success(f"✅ Patient '{name}' geladen!")
-        else:
-            st.error(f"Fehler beim Laden von Patient '{name}'")
-        
+
         st.session_state.clicked_suggestion = None
         st.rerun()
 
     # --------------------------------------------------
     # Text input
     # --------------------------------------------------
-    # Determine the value to display
-    if st.session_state.just_loaded_patient:
-        display_value = st.session_state.display_patient_name
-    elif st.session_state.display_patient_name:
-        display_value = st.session_state.display_patient_name
-    else:
-        display_value = st.session_state.patient_data.get("patient", "")
+    display_value = (
+        st.session_state.display_patient_name
+        if st.session_state.display_patient_name
+        else st.session_state.patient_data.get("patient", "")
+    )
 
     typed = st.text_input(
         "Geben Sie den Namen ein und drücken Sie die Eingabetaste, um Vorschläge zu suchen.",
         value=display_value,
         placeholder="Vor- und Nachname",
-        key="patient_name_input"
     )
 
     # --------------------------------------------------
@@ -872,41 +865,43 @@ def patient_inputs():
     # --------------------------------------------------
     if typed != st.session_state.current_patient_input:
         st.session_state.current_patient_input = typed
-        if not st.session_state.just_loaded_patient:
-            st.session_state.display_patient_name = typed
 
-        # User starts typing a NEW patient → clear old data
         if (
             st.session_state.last_loaded_patient
             and typed
             and typed not in patient_names
         ):
+            # Clear all data when typing a new patient
             st.session_state.patient_data = {}
             st.session_state.nem_prescriptions = []
             st.session_state.therapieplan_data = {}
             st.session_state.ernaehrung_data = {}
             st.session_state.infusion_data = {}
             st.session_state.last_loaded_patient = None
+            st.session_state.display_patient_name = ""
             st.session_state.just_loaded_patient = False
             st.rerun()
+
+    st.session_state.display_patient_name = typed
 
     # --------------------------------------------------
     # Suggestions
     # --------------------------------------------------
-    suggestions = [n for n in patient_names if typed and typed.lower() in n.lower()]
-
-    if typed and suggestions and not st.session_state.just_loaded_patient:
-        st.write("**Vorschläge:**")
-        cols = st.columns(3)
-        for i, name in enumerate(suggestions[:9]):
-            col_idx = i % 3
-            with cols[col_idx]:
-                if st.button(name, key=f"suggest_{name}", use_container_width=True):
-                    st.session_state.clicked_suggestion = name
-                    st.rerun()
+    if typed and typed not in patient_names and not st.session_state.just_loaded_patient:
+        suggestions = [n for n in patient_names if typed and typed.lower() in n.lower()]
+        
+        if suggestions:
+            st.write("**Vorschläge:**")
+            cols = st.columns(3)
+            for i, name in enumerate(suggestions[:9]):
+                col_idx = i % 3
+                with cols[col_idx]:
+                    if st.button(name, key=f"suggest_{name}", use_container_width=True):
+                        st.session_state.clicked_suggestion = name
+                        st.rerun()
 
     # --------------------------------------------------
-    # Auto-load on Enter (exact match)
+    # Auto-load on Enter
     # --------------------------------------------------
     if (
         typed
@@ -914,34 +909,27 @@ def patient_inputs():
         and typed != st.session_state.last_loaded_patient
         and not st.session_state.just_loaded_patient
     ):
-        st.write(f"Auto-loading patient: {typed}")  # Debug output
-        
         result = load_patient_data(typed)
-        if result[0] is not None:
+        if result[0]:
             patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data = result
-            
+
             st.session_state.patient_data = patient_data
-            st.session_state.nem_prescriptions = nem_prescriptions
-            st.session_state.therapieplan_data = therapieplan_data
-            st.session_state.ernaehrung_data = ernaehrung_data
-            st.session_state.infusion_data = infusion_data
+            st.session_state.nem_prescriptions = nem_prescriptions if nem_prescriptions else []
+            st.session_state.therapieplan_data = therapieplan_data if therapieplan_data else {}
+            st.session_state.ernaehrung_data = ernaehrung_data if ernaehrung_data else {}
+            st.session_state.infusion_data = infusion_data if infusion_data else {}
 
             st.session_state.last_loaded_patient = typed
             st.session_state.display_patient_name = typed
-            st.session_state.current_patient_input = typed
             st.session_state.just_loaded_patient = True
-            
-            st.success(f"✅ Patient '{typed}' geladen!")
             st.rerun()
-        else:
-            st.error(f"Fehler beim Laden von Patient '{typed}'")
 
-    # Reset flag AFTER UI is stable
+    # Reset flag
     if st.session_state.just_loaded_patient:
         st.session_state.just_loaded_patient = False
 
     # --------------------------------------------------
-    # Defaults for form fields
+    # Defaults
     # --------------------------------------------------
     pdata = st.session_state.patient_data or {}
 
@@ -1040,7 +1028,7 @@ def patient_inputs():
         key="diagnosen_input"
     )
 
-        # --------------------------------------------------
+    # --------------------------------------------------
     # Kontrolltermine
     # --------------------------------------------------
     st.markdown("---")
@@ -1056,7 +1044,7 @@ def patient_inputs():
 
     kontrolltermin_kommentar = st.text_input("Kommentar:", value=default_kontrolltermin_kommentar, key="kontrolltermin_kommentar_input")
 
-        # --------------------------------------------------
+    # --------------------------------------------------
     # Therapy Progress Bar
     # --------------------------------------------------
     st.markdown("---")
@@ -1083,6 +1071,7 @@ def patient_inputs():
     }
 
     return data
+
 
 # --- Helpers ---
 def _fmt_dt(d):
@@ -1561,6 +1550,12 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
 # --- Main app ---
 def main():
     df = fetch_supplements()
+    
+    # CRITICAL: Check if we just loaded a patient and need to reset tab state
+    if st.session_state.get('just_loaded_patient', False):
+        # Force a clean rerun to ensure all tabs use fresh data
+        st.session_state.just_loaded_patient = False
+        # Don't rerun here - let the natural flow continue
 
     # --- Patient Info ---
     patient = patient_inputs()
@@ -1651,9 +1646,6 @@ def main():
     infusion_data = {}
 
     with tabs[0]:  # Therapieplan Tab
-            # Get data from session state
-            therapieplan_data = st.session_state.get('therapieplan_data', {})
-            
             # SECTION 1: Diagnostik & Überprüfung (FIRST)
             st.markdown('<div class="green-section-header">Diagnostik & Überprüfung</div>', unsafe_allow_html=True)
             
@@ -1662,11 +1654,11 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 zaehne = st.checkbox("Überprüfung der Zähne/Kieferknochen mittels OPG (Panoramaaufnahme mit lachendem Gebiss) / DVT", 
-                                    value=therapieplan_data.get("zaehne", False),
+                                    value=st.session_state.therapieplan_data.get("zaehne", False),
                                     key="zaehne_checkbox")
             with col2:
                 zaehne_zu_pruefen = st.text_input("Zähne zu überprüfen (OPG/DVT):", 
-                                                value=therapieplan_data.get("zaehne_zu_pruefen", ""),
+                                                value=st.session_state.therapieplan_data.get("zaehne_zu_pruefen", ""),
                                                 key="zaehne_zu_pruefen_input")
             
             st.markdown("---")
@@ -1675,11 +1667,11 @@ def main():
             st.markdown('<div class="section-subheader">Bewegungsapparat & Schwermetalle</div>', unsafe_allow_html=True)
             
             analyse_bewegungsapparat = st.checkbox("Analyse Bewegungsapparat (Martin)", 
-                                                value=therapieplan_data.get("analyse_bewegungsapparat", False),
+                                                value=st.session_state.therapieplan_data.get("analyse_bewegungsapparat", False),
                                                 key="analyse_bewegungsapparat_checkbox")
             
             schwermetalltest = st.checkbox("Schwermetalltest mit DMSA und Ca EDTA", 
-                                        value=therapieplan_data.get("schwermetalltest", False),
+                                        value=st.session_state.therapieplan_data.get("schwermetalltest", False),
                                         key="schwermetalltest_checkbox")
             
             st.markdown("---")
@@ -1687,10 +1679,10 @@ def main():
             # Sub-section: Labor & Diagnostik
             st.markdown('<div class="section-subheader">Labor & Diagnostik</div>', unsafe_allow_html=True)
             
-            lab_imd = st.text_input("IMD:", value=therapieplan_data.get("lab_imd", ""), key="lab_imd_input")
-            lab_mmd = st.text_input("MMD:", value=therapieplan_data.get("lab_mmd", ""), key="lab_mmd_input")
-            lab_nextgen = st.text_input("NextGen Onco:", value=therapieplan_data.get("lab_nextgen", ""), key="lab_nextgen_input")
-            lab_sonstiges = st.text_input("Sonstiges:", value=therapieplan_data.get("lab_sonstiges", ""), key="lab_sonstiges_input")
+            lab_imd = st.text_input("IMD:", value=st.session_state.therapieplan_data.get("lab_imd", ""), key="lab_imd_input")
+            lab_mmd = st.text_input("MMD:", value=st.session_state.therapieplan_data.get("lab_mmd", ""), key="lab_mmd_input")
+            lab_nextgen = st.text_input("NextGen Onco:", value=st.session_state.therapieplan_data.get("lab_nextgen", ""), key="lab_nextgen_input")
+            lab_sonstiges = st.text_input("Sonstiges:", value=st.session_state.therapieplan_data.get("lab_sonstiges", ""), key="lab_sonstiges_input")
             
             st.markdown("---")
             
@@ -1701,35 +1693,35 @@ def main():
             st.markdown('<div class="section-subheader">Darm & Entgiftung</div>', unsafe_allow_html=True)
             
             darm_biofilm = st.checkbox("Darm - Biofilmentfernung nach www.regenbogenkreis.de (Express-Darmkur 4 Tageskur)", 
-                                    value=therapieplan_data.get("darm_biofilm", False),
+                                    value=st.session_state.therapieplan_data.get("darm_biofilm", False),
                                     key="darm_biofilm_checkbox")
             
             darmsanierung = st.checkbox("Darmsanierung nach Paracelsus Klinik (Rezept von Praxis)", 
-                                    value=therapieplan_data.get("darmsanierung", False),
+                                    value=st.session_state.therapieplan_data.get("darmsanierung", False),
                                     key="darmsanierung_checkbox")
             
             darmsanierung_dauer = st.multiselect("Darmsanierung Dauer:", ["4 Wo", "6 Wo", "8 Wo"], 
-                                            default=therapieplan_data.get("darmsanierung_dauer", []),
+                                            default=st.session_state.therapieplan_data.get("darmsanierung_dauer", []),
                                             key="darmsanierung_dauer_select")
             
             hydrocolon = st.checkbox("mit Hydrocolon (Darmspülung) 2x insgesamt, Abstand 14 Tage mit Rekolonisierungs-Shot", 
-                                    value=therapieplan_data.get("hydrocolon", False),
+                                    value=st.session_state.therapieplan_data.get("hydrocolon", False),
                                     key="hydrocolon_checkbox")
             
             parasiten = st.checkbox("Parasitenbehandlung mit Vermox (3 Tage)", 
-                                value=therapieplan_data.get("parasiten", False),
+                                value=st.session_state.therapieplan_data.get("parasiten", False),
                                 key="parasiten_checkbox")
             
             parasiten_bio = st.checkbox("Biologisches Parasitenprogramm (z. B. www.drclarkcenter.de)", 
-                                    value=therapieplan_data.get("parasiten_bio", False),
+                                    value=st.session_state.therapieplan_data.get("parasiten_bio", False),
                                     key="parasiten_bio_checkbox")
             
             leberdetox = st.checkbox("Leberdetox Behandlung nach Paracelsus Klinik (2-Tageskur, 4–5x alle 4–6 Wochen)", 
-                                value=therapieplan_data.get("leberdetox", False),
+                                value=st.session_state.therapieplan_data.get("leberdetox", False),
                                 key="leberdetox_checkbox")
             
             nierenprogramm = st.checkbox("Nierenprogramm nach Dr. Clark – 4 Wochen – bitte bei www.drclarkcenter.de beziehen", 
-                                        value=therapieplan_data.get("nierenprogramm", False),
+                                        value=st.session_state.therapieplan_data.get("nierenprogramm", False),
                                         key="nierenprogramm_checkbox")
             
             st.markdown("---")
@@ -1738,43 +1730,43 @@ def main():
             st.markdown('<div class="section-subheader">Haupttherapien</div>', unsafe_allow_html=True)
             
             mikronaehrstoffe = st.checkbox("Einnahme Mikronährstoffen (NEM-Verordnung) (siehe separate PDF)", 
-                                        value=therapieplan_data.get("mikronaehrstoffe", False),
+                                        value=st.session_state.therapieplan_data.get("mikronaehrstoffe", False),
                                         key="mikronaehrstoffe_checkbox")
             
             infusionsbehandlung = st.checkbox("Infusionstherapie (siehe separate PDF)", 
-                                            value=therapieplan_data.get("infusionsbehandlung", False),
+                                            value=st.session_state.therapieplan_data.get("infusionsbehandlung", False),
                                             key="infusionsbehandlung_checkbox")
             
             neuraltherapie = st.checkbox("Neuraltherapie", 
-                                        value=therapieplan_data.get("neuraltherapie", False),
+                                        value=st.session_state.therapieplan_data.get("neuraltherapie", False),
                                         key="neuraltherapie_checkbox")
             
             eigenblut = st.checkbox("Eigenbluttherapie", 
-                                    value=therapieplan_data.get("eigenblut", False),
+                                    value=st.session_state.therapieplan_data.get("eigenblut", False),
                                     key="eigenblut_checkbox")
             
             aethetisch = st.checkbox("Ästhetische Behandlung (Botox/PRP/Fäden/Hyaloron)", 
-                                    value=therapieplan_data.get("aethetisch", False),
+                                    value=st.session_state.therapieplan_data.get("aethetisch", False),
                                     key="aethetisch_checkbox")
             
             ozontherapie = st.checkbox("Ozontherapie", 
-                                        value=therapieplan_data.get("ozontherapie", False),
+                                        value=st.session_state.therapieplan_data.get("ozontherapie", False),
                                         key="ozontherapie_checkbox")
             
             medikamente = st.checkbox("Medikamentenverordnung - Rezept für:", 
-                                    value=therapieplan_data.get("medikamente", False),
+                                    value=st.session_state.therapieplan_data.get("medikamente", False),
                                     key="medikamente_checkbox")
             
             # Text input for medikamente (shown after checkbox)
             if medikamente:
                 medikamente_text = st.text_input("Rezept Details:", 
-                                                value=therapieplan_data.get("medikamente_text", ""),
+                                                value=st.session_state.therapieplan_data.get("medikamente_text", ""),
                                                 key="medikamente_text_input")
             else:
                 medikamente_text = ""
             
             timewaver_freq = st.checkbox("TimeWaver Frequency Behandlung", 
-                                        value=therapieplan_data.get("timewaver_freq", False),
+                                        value=st.session_state.therapieplan_data.get("timewaver_freq", False),
                                         key="timewaver_freq_checkbox")
             
             st.markdown("---")
@@ -1783,27 +1775,27 @@ def main():
             st.markdown('<div class="section-subheader">Biologische & Komplementäre Therapien</div>', unsafe_allow_html=True)
             
             bio_isopath = st.checkbox("Biologische Isopathische Therapie", 
-                                    value=therapieplan_data.get("bio_isopath", False),
+                                    value=st.session_state.therapieplan_data.get("bio_isopath", False),
                                     key="bio_isopath_checkbox")
             
             akupunktur = st.checkbox("Akupunktur", 
-                                    value=therapieplan_data.get("akupunktur", False),
+                                    value=st.session_state.therapieplan_data.get("akupunktur", False),
                                     key="akupunktur_checkbox")
             
             homoeopathie = st.checkbox("Homöopathie (Anna)", 
-                                    value=therapieplan_data.get("homoeopathie", False),
+                                    value=st.session_state.therapieplan_data.get("homoeopathie", False),
                                     key="homoeopathie_checkbox")
             
             bioresonanz = st.checkbox("Bioresonanz (Anna)", 
-                                    value=therapieplan_data.get("bioresonanz", False),
+                                    value=st.session_state.therapieplan_data.get("bioresonanz", False),
                                     key="bioresonanz_checkbox")
             
             hypnose = st.checkbox("Hypnosetherapie (Noreen Martin Miro)", 
-                                value=therapieplan_data.get("hypnose", False),
+                                value=st.session_state.therapieplan_data.get("hypnose", False),
                                 key="hypnose_checkbox")
             
             yager = st.checkbox("Yagertherapie", 
-                                value=therapieplan_data.get("yager", False),
+                                value=st.session_state.therapieplan_data.get("yager", False),
                                 key="yager_checkbox")
             
             st.markdown("---")
@@ -1812,52 +1804,52 @@ def main():
             st.markdown('<div class="section-subheader">Weitere Maßnahmen</div>', unsafe_allow_html=True)
             
             atemtherapie = st.checkbox("Atemtherapie", 
-                                    value=therapieplan_data.get("atemtherapie", False),
+                                    value=st.session_state.therapieplan_data.get("atemtherapie", False),
                                     key="atemtherapie_checkbox")
             
             bewegung = st.checkbox("Bewegung", 
-                                value=therapieplan_data.get("bewegung", False),
+                                value=st.session_state.therapieplan_data.get("bewegung", False),
                                 key="bewegung_checkbox")
             
             ernaehrung = st.checkbox("Ernährungsberatung", 
-                                    value=therapieplan_data.get("ernaehrung", False),
+                                    value=st.session_state.therapieplan_data.get("ernaehrung", False),
                                     key="ernaehrung_checkbox")
             
             darmsanierung_ern = st.checkbox("Darmsanierung", 
-                                        value=therapieplan_data.get("darmsanierung_ern", False),
+                                        value=st.session_state.therapieplan_data.get("darmsanierung_ern", False),
                                         key="darmsanierung_ern_checkbox")
             
             leberreinigung = st.checkbox("Leberreinigung", 
-                                        value=therapieplan_data.get("leberreinigung", False),
+                                        value=st.session_state.therapieplan_data.get("leberreinigung", False),
                                         key="leberreinigung_checkbox")
             
             lowcarb = st.checkbox("Low Carb Ernährung", 
-                                value=therapieplan_data.get("lowcarb", False),
+                                value=st.session_state.therapieplan_data.get("lowcarb", False),
                                 key="lowcarb_checkbox")
             
             fasten = st.checkbox("Intermittierendes Fasten", 
-                                value=therapieplan_data.get("fasten", False),
+                                value=st.session_state.therapieplan_data.get("fasten", False),
                                 key="fasten_checkbox")
             
             krebsdiaet = st.checkbox("Krebs Diät nach Dr. Coy/Dr. Strunz/angelehnt Budwig", 
-                                    value=therapieplan_data.get("krebsdiaet", False),
+                                    value=st.session_state.therapieplan_data.get("krebsdiaet", False),
                                     key="krebsdiaet_checkbox")
             
             ketogene = st.checkbox("Ketogene Ernährung", 
-                                value=therapieplan_data.get("ketogene", False),
+                                value=st.session_state.therapieplan_data.get("ketogene", False),
                                 key="ketogene_checkbox")
             
             basisch = st.checkbox("Basische Ernährung", 
-                                value=therapieplan_data.get("basisch", False),
+                                value=st.session_state.therapieplan_data.get("basisch", False),
                                 key="basisch_checkbox")
             
             # Text inputs for Weitere Maßnahmen
             naehrstoff_ausgleich = st.text_input("Nährstoffmängel ausgleichen:", 
-                                                value=therapieplan_data.get("naehrstoff_ausgleich", ""),
+                                                value=st.session_state.therapieplan_data.get("naehrstoff_ausgleich", ""),
                                                 key="naehrstoff_ausgleich_input")
             
             therapie_sonstiges = st.text_input("Sonstiges:", 
-                                            value=therapieplan_data.get("therapie_sonstiges", ""),
+                                            value=st.session_state.therapieplan_data.get("therapie_sonstiges", ""),
                                             key="therapie_sonstiges_input")
             
             st.markdown("---")
@@ -1866,11 +1858,11 @@ def main():
             st.markdown('<div class="section-subheader">Individuelle Behandlungen</div>', unsafe_allow_html=True)
             
             magenband = st.checkbox("Magenband", 
-                                value=therapieplan_data.get("magenband", False),
+                                value=st.session_state.therapieplan_data.get("magenband", False),
                                 key="magenband_checkbox")
             
             energie_behandlungen = st.checkbox("Energiebehandlungen bei Marie", 
-                                            value=therapieplan_data.get("energie_behandlungen", False),
+                                            value=st.session_state.therapieplan_data.get("energie_behandlungen", False),
                                             key="energie_behandlungen_checkbox")
             
             st.markdown("---")
@@ -1879,11 +1871,11 @@ def main():
             st.markdown('<div class="section-subheader">Gesprächstermine</div>', unsafe_allow_html=True)
             
             zwischengespraech_4 = st.checkbox("Zwischengespräch nach 4 Wochen (1/2h)", 
-                                            value=therapieplan_data.get("zwischengespraech_4", False),
+                                            value=st.session_state.therapieplan_data.get("zwischengespraech_4", False),
                                             key="zwischengespraech_4_checkbox")
             
             zwischengespraech_8 = st.checkbox("Zwischengespräch nach weiteren 8 Wochen (1/2h)", 
-                                            value=therapieplan_data.get("zwischengespraech_8", False),
+                                            value=st.session_state.therapieplan_data.get("zwischengespraech_8", False),
                                             key="zwischengespraech_8_checkbox")
             
             st.markdown("---")
@@ -1895,11 +1887,11 @@ def main():
             st.markdown('<div class="section-subheader">Ausleitung</div>', unsafe_allow_html=True)
 
             ausleitung_inf = st.checkbox("Schwermetallausleitung Infusion", 
-                                        value=therapieplan_data.get("ausleitung_inf", False),
+                                        value=st.session_state.therapieplan_data.get("ausleitung_inf", False),
                                         key="ausleitung_inf_checkbox")
 
             ausleitung_oral = st.checkbox("Schwermetallausleitung oral", 
-                                        value=therapieplan_data.get("ausleitung_oral", False),
+                                        value=st.session_state.therapieplan_data.get("ausleitung_oral", False),
                                         key="ausleitung_oral_checkbox")
 
             st.markdown("---")
@@ -1910,11 +1902,11 @@ def main():
             col1, col2 = st.columns(2)
             with col1:
                 infektion_bakt = st.text_input("Infektionsbehandlung für Bakterien (Borr./Helicob.):", 
-                                            value=therapieplan_data.get("infektion_bakt", ""),
+                                            value=st.session_state.therapieplan_data.get("infektion_bakt", ""),
                                             key="infektion_bakt_input")
             with col2:
                 infektion_virus = st.text_input("Infektionsbehandlung für Viren (EBV, HPV, Herpes, Corona):", 
-                                            value=therapieplan_data.get("infektion_virus", ""),
+                                            value=st.session_state.therapieplan_data.get("infektion_virus", ""),
                                             key="infektion_virus_input")
         
             # Update session state for Therapieplan with all current values
@@ -1992,7 +1984,6 @@ def main():
                 }
                 st.rerun()
 
-           
     with tabs[1]:
         # Store NEM prescriptions in a container
         nem_container = st.container()
@@ -2291,9 +2282,6 @@ def main():
                     st.warning("⚠️ Keine NEM-Supplemente ausgewählt. Bitte mindestens ein Supplement mit Dosierung oder Einnahmezeiten ausfüllen.")
          
     with tabs[2]:  # Infusionstherapie Tab
-        # Get data from session state
-        infusion_data = st.session_state.get('infusion_data', {})
-        
         # Section: Infusionstherapie
         st.markdown('<div class="green-section-header">Infusionstherapie</div>', unsafe_allow_html=True)
         
@@ -2322,7 +2310,7 @@ def main():
                 with row[0]:
                     value = st.checkbox(
                         "",
-                        value=infusion_data.get(key_prefix, default_checked),
+                        value=st.session_state.infusion_data.get(key_prefix, default_checked),
                         key=checkbox_key,
                         label_visibility="collapsed"
                     )
@@ -2348,8 +2336,8 @@ def main():
                 weeks_value = st.selectbox(
                     "",
                     weeks_options,
-                    index=weeks_options.index(infusion_data.get(weeks_key, default_weeks))
-                    if infusion_data.get(weeks_key, default_weeks) in weeks_options else 0,
+                    index=weeks_options.index(st.session_state.infusion_data.get(weeks_key, default_weeks))
+                    if st.session_state.infusion_data.get(weeks_key, default_weeks) in weeks_options else 0,
                     key=weeks_key,
                     label_visibility="collapsed",
                     placeholder="Wochen"
@@ -2360,8 +2348,8 @@ def main():
                 freq_value = st.selectbox(
                     "",
                     freq_options,
-                    index=freq_options.index(infusion_data.get(freq_key, default_freq))
-                    if infusion_data.get(freq_key, default_freq) in freq_options else 0,
+                    index=freq_options.index(st.session_state.infusion_data.get(freq_key, default_freq))
+                    if st.session_state.infusion_data.get(freq_key, default_freq) in freq_options else 0,
                     key=freq_key,
                     label_visibility="collapsed",
                     placeholder="Häufigkeit"
@@ -2679,7 +2667,7 @@ def main():
         
         infektions_infusion = st.text_input(
             "Infektions-Infusion / H2O2 (Anzahl / ml)", 
-            value=infusion_data.get("infektions_infusion", ""),
+            value=st.session_state.infusion_data.get("infektions_infusion", ""),
             key="infektions_infusion_input",
             placeholder="Anzahl / ml"
         )
@@ -2687,8 +2675,8 @@ def main():
         immun_booster = st.selectbox(
             "Immun-Boosterung Typ", 
             ["", "Typ 1", "Typ 2", "Typ 3"], 
-            index=["", "Typ 1", "Typ 2", "Typ 3"].index(infusion_data.get("immun_booster", "")) 
-                if infusion_data.get("immun_booster", "") in ["", "Typ 1", "Typ 2", "Typ 3"] else 0,
+            index=["", "Typ 1", "Typ 2", "Typ 3"].index(st.session_state.infusion_data.get("immun_booster", "")) 
+                if st.session_state.infusion_data.get("immun_booster", "") in ["", "Typ 1", "Typ 2", "Typ 3"] else 0,
             key="immun_booster_select",
             placeholder="Typ auswählen"
         )
@@ -2696,7 +2684,7 @@ def main():
         energetisierungsinfusion = st.multiselect(
             "Energetisierungsinfusion mit", 
             ["Vitamin B Shot", "Q10 Boostershot"],
-            default=infusion_data.get("energetisierungsinfusion", []),
+            default=st.session_state.infusion_data.get("energetisierungsinfusion", []),
             key="energetisierungsinfusion_select",
             placeholder="Auswählen..."
         )
@@ -2704,14 +2692,14 @@ def main():
         naehrstoffinfusion = st.multiselect(
             "Nährstoffinfusion mit", 
             ["Glutathion", "Alpha Liponsäure"],
-            default=infusion_data.get("naehrstoffinfusion", []),
+            default=st.session_state.infusion_data.get("naehrstoffinfusion", []),
             key="naehrstoffinfusion_select",
             placeholder="Auswählen..."
         )
         
         eisen_infusion = st.text_input(
             "Eisen Infusion (Ferinject) mg / Anzahl", 
-            value=infusion_data.get("eisen_infusion", ""),
+            value=st.session_state.infusion_data.get("eisen_infusion", ""),
             key="eisen_infusion_input",
             placeholder="mg / Anzahl"
         )
@@ -2773,7 +2761,7 @@ def main():
             ["Vit.B Komplex", "Vit.B6/B12/Folsäure", "Vit.D 300 kIE", "Vit.B3", "Biotin", "Glycin",
             "Cholincitrat", "Zink inject", "Magnesium 400mg", "TAD (red.Glut.)", "Arginin", "Glutamin",
             "Taurin", "Ornithin", "Prolin/Lysin", "Lysin", "PC 1000mg", "Oxyvenierung", "Mito-Energy"],
-            default=infusion_data.get("zusaetze", []),
+            default=st.session_state.infusion_data.get("zusaetze", []),
             key="zusaetze_select",
             placeholder="Zusätze auswählen..."
         )
