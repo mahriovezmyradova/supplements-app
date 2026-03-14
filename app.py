@@ -11,7 +11,6 @@ from supabase_db import SupabaseDB
 st.set_page_config("THERAPIEKONZEPT", layout="wide")
 
 # --- Database ---
-# --- Database ---
 @st.cache_resource
 def get_db():
     return SupabaseDB()
@@ -40,14 +39,14 @@ def load_patient_data(patient_name):
     """Load patient data and all prescriptions from database"""
     return db.load_patient_data(patient_name)
 
-# Replace the existing CSS with this updated version:
+# Enhanced CSS with larger fonts and proper divider spacing
 st.markdown("""
 <style>
 .header-container {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 0;
+    padding: 8px 0 !important;
 }
 .header-logo {
     flex: 1;
@@ -62,151 +61,432 @@ st.markdown("""
     flex: 1;
     text-align: right;
 }
-/* Success message styling */
-.success-message {
-    background-color: #d4edda;
-    color: #155724;
-    padding: 12px;
-    border-radius: 4px;
-    border: 1px solid #c3e6cb;
-    margin: 10px 0;
+.header-address div {
+    padding: 3px !important;
+    line-height: 1.4 !important;
+    font-size: 13px !important;
 }
 
-/* Main color theme - Replace red with RGB(38, 96, 65) */
+/* Main color theme - larger buttons */
 .stButton > button {
     background-color: rgb(38, 96, 65) !important;
     color: white !important;
     border: 1px solid rgb(30, 76, 52) !important;
+    padding: 10px 20px !important;
+    font-size: 15px !important;
+    border-radius: 6px !important;
 }
 
-.stButton > button:hover {
-    background-color: rgb(30, 76, 52) !important;
-    border-color: rgb(25, 63, 43) !important;
-    color: white !important;
+/* Tabs styling - larger */
+.stTabs {
+    margin-top: 10px !important;
 }
 
-/* Primary button styling */
-.stButton > button[kind="primary"] {
-    background-color: rgb(38, 96, 65) !important;
-    color: white !important;
-}
-
-.stButton > button[kind="primary"]:hover {
-    background-color: rgb(30, 76, 52) !important;
-}
-
-/* Secondary button styling */
-.stButton > button[kind="secondary"] {
-    background-color: rgb(240, 242, 246) !important;
-    color: rgb(38, 96, 65) !important;
-    border: 1px solid rgb(38, 96, 65) !important;
-}
-
-.stButton > button[kind="secondary"]:hover {
-    background-color: rgb(230, 232, 236) !important;
-    color: rgb(30, 76, 52) !important;
-    border-color: rgb(30, 76, 52) !important;
-}
-
-/* Delete confirmation buttons */
-.stButton > button[key="confirm_delete"] {
-    background-color: rgb(220, 53, 69) !important;
-    color: white !important;
-    border: 1px solid rgb(200, 35, 51) !important;
-}
-
-.stButton > button[key="confirm_delete"]:hover {
-    background-color: rgb(200, 35, 51) !important;
-}
-
-/* Tabs styling */
-/* Tabs full width and 50/50 */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 0px !important;  /* Remove gap between tabs */
+    gap: 0px !important;
     width: 100% !important;
+    margin-bottom: 10px !important;
 }
 
 .stTabs [data-baseweb="tab"] {
-    height: 50px;
+    height: 50px !important;
     white-space: pre-wrap;
     background-color: #f0f2f6;
     border-radius: 4px 4px 0px 0px;
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding: 12px 12px !important;
     color: rgb(38, 96, 65);
-    flex: 1 !important;  /* Make tabs flexible */
+    flex: 1 !important;
     text-align: center !important;
     justify-content: center !important;
-    width: 50% !important;  /* Each tab takes 50% */
+    width: 50% !important;
+    margin: 0 !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+}
+
+/* Checkbox styling - larger */
+[data-testid="stCheckbox"] {
+    margin: 5px 0 !important;
+}
+
+[data-testid="stCheckbox"] span {
+    color: rgb(38, 96, 65) !important;
+    font-size: 15px !important;
+}
+
+/* Radio button styling - larger */
+[data-testid="stRadio"] {
+    margin: 8px 0 !important;
+}
+
+[data-testid="stRadio"] span {
+    color: rgb(38, 96, 65) !important;
+    font-size: 15px !important;
+}
+
+/* Selectbox/Multiselect styling - larger */
+[data-testid="stSelectbox"], [data-testid="stMultiSelect"] {
+    margin-bottom: 10px !important;
+}
+
+[data-testid="stSelectbox"] span, [data-testid="stMultiSelect"] span {
+    color: rgb(38, 96, 65) !important;
+    font-size: 15px !important;
+}
+
+/* Text input/textarea styling - larger */
+.stTextInput, .stTextArea, .stNumberInput, .stDateInput {
+    margin-bottom: 10px !important;
+}
+
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea,
+.stNumberInput > div > div > input,
+[data-testid="stDateInput"] > div > div > input {
+    padding: 10px 12px !important;
+    font-size: 15px !important;
+    border-radius: 6px !important;
+    border: 1px solid #ced4da !important;
+}
+
+/* Labels - larger */
+.stTextInput label, .stTextArea label, .stNumberInput label, 
+.stDateInput label, .stSelectbox label, .stMultiSelect label {
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    margin-bottom: 5px !important;
+    color: #333 !important;
+}
+
+/* Success message styling */
+.success-message {
+    background-color: #d4edda;
+    color: #155724;
+    padding: 15px !important;
+    border-radius: 8px !important;
+    border: 1px solid #c3e6cb;
+    margin: 15px 0 !important;
+    font-size: 15px !important;
+    font-weight: 500 !important;
+}
+
+/* General spacing */
+.main > div {
+    padding: 15px 20px !important;
+}
+
+/* Element spacing */
+.stMarkdown, .stTextInput, .stNumberInput, .stDateInput, 
+.stSelectbox, .stMultiSelect, .stCheckbox, .stRadio, 
+.stButton, .stAlert {
+    margin-bottom: 15px !important;
+}
+
+/* Form spacing */
+div[data-testid="stForm"] {
+    padding: 20px !important;
+    border-radius: 10px !important;
+}
+
+/* Column spacing */
+div[data-testid="column"] {
+    padding: 0 10px !important;
+}
+
+/* Text elements - larger */
+p, li, .stMarkdown, .stText {
+    line-height: 1.6 !important;
+    font-size: 15px !important;
+}
+
+/* Expanders - larger */
+.streamlit-expanderHeader {
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    padding: 12px 12px !important;
+}
+
+.streamlit-expanderContent {
+    padding: 20px 15px !important;
+}
+
+/* Section dividers - with proper spacing */
+hr {
+    margin: 25px 0 !important;
+    border-width: 1px !important;
+    border-color: #ddd !important;
+}
+
+/* Headers - larger */
+.stMarkdown h1 {
+    font-size: 2.2rem !important;
+    margin-bottom: 10px !important;
+}
+
+.stMarkdown h2 {
+    font-size: 1.8rem !important;
+    margin-top: 25px !important;
+    margin-bottom: 10px !important;
+}
+
+.stMarkdown h3 {
+    font-size: 1.5rem !important;
+    margin-top: 20px !important;
+    margin-bottom: 10px !important;
+}
+
+.stMarkdown h4 {
+    font-size: 1.3rem !important;
+    margin-top: 15px !important;
+    margin-bottom: 10px !important;
+}
+
+/* Section headers - larger */
+.green-section-header {
+    background-color: rgb(38, 96, 65) !important;
+    color: white !important;
+    padding: 12px 18px !important;
+    border-radius: 6px !important;
+    margin: 20px 0 15px 0 !important;
+    font-weight: bold !important;
+    font-size: 1.4rem !important;
+    letter-spacing: 0.3px !important;
+}
+
+.section-subheader {
+    font-weight: bold !important;
+    font-size: 1.3rem !important;
+    margin: 20px 0 12px 0 !important;
+    color: rgb(38, 96, 65) !important;
+    border-bottom: 2px solid rgb(38, 96, 65) !important;
+    padding-bottom: 5px !important;
+}
+
+/* Progress bar */
+.progress-container {
+    margin: 20px 0 30px 0 !important;
+    padding: 10px !important;
+}
+
+/* NEM sticky header */
+.sticky-header {
+    padding: 12px 0 !important;
+    margin-bottom: 10px !important;
+}
+
+.sticky-header .stMarkdown {
+    font-size: 14px !important;
+}
+
+/* Dropdown options - larger */
+div[role="listbox"] ul li {
+    font-size: 15px !important;
+    padding: 10px 15px !important;
+}
+
+/* Caption */
+.stCaption {
+    font-size: 14px !important;
+    color: #666 !important;
+    margin-top: 8px !important;
+    margin-bottom: 10px !important;
+}
+
+/* Container borders */
+.stContainer {
+    border-radius: 8px !important;
+}
+
+/* ========== INFUSION STYLING ========== */
+/* Infusion row styling for perfect alignment */
+.infusion-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+}
+
+.infusion-checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    height: 40px;
+}
+
+.infusion-checkbox-wrapper [data-testid="stCheckbox"] {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+}
+
+.infusion-checkbox-wrapper [data-testid="stCheckbox"] label {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    min-height: unset;
+}
+
+.infusion-label-container {
+    display: flex;
+    align-items: center;
+    height: 40px;
+}
+
+/* Info icon - larger */
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: rgb(38, 96, 65);
+    color: white;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: help;
+    margin-left: 6px;
+    line-height: 1;
+    position: relative;
+}
+
+.info-icon:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 25px;
+    top: -12px;
+    background-color: #333;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    white-space: nowrap;
+    z-index: 1000;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+/* Procain row styling */
+.procain-container {
+    margin-top: 8px;
+    width: 100%;
+}
+
+.procain-container .stTextInput {
+    margin-top: 8px;
+    margin-bottom: 0;
+}
+
+.procain-container .stTextInput input {
+    padding: 8px 12px !important;
+    font-size: 14px !important;
+}
+
+/* Infusion header styling */
+.infusion-header {
+    font-size: 15px !important;
+    font-weight: bold !important;
+    color: rgb(38, 96, 65) !important;
     margin: 0 !important;
 }
 
-.stTabs [aria-selected="true"] {
-    background-color: rgb(38, 96, 65) !important;
-    color: white !important;
+/* Infusion section spacing */
+.infusion-section {
+    margin-bottom: 10px;
 }
 
-/* Checkbox styling */
-[data-testid="stCheckbox"] span {
-    color: rgb(38, 96, 65) !important;
+/* Infusion label text */
+.infusion-label-container span:first-child,
+.infusion-label-text {
+    font-size: 15px !important;
 }
 
-/* Radio button styling */
-[data-testid="stRadio"] span {
-    color: rgb(38, 96, 65) !important;
+/* Additional fields in infusion section */
+.weitere-angaben {
+    font-size: 15px !important;
 }
 
-/* Selectbox/Multiselect styling */
-[data-testid="stSelectbox"] span, 
-[data-testid="stMultiSelect"] span {
-    color: rgb(38, 96, 65) !important;
+/* Multiselect in infusion section */
+.infusion-multiselect .stMultiSelect {
+    margin-bottom: 12px !important;
 }
 
-/* Text input/textarea focus */
-.stTextInput > div > div > input:focus,
-.stTextArea > div > div > textarea:focus {
-    border-color: rgb(38, 96, 65) !important;
-    box-shadow: 0 0 0 0.2rem rgba(38, 96, 65, 0.25) !important;
-}
-hr {
-    margin: 2px 0 !important;
+.infusion-multiselect label {
+    font-size: 14px !important;
 }
 
-            
-/* Number input focus */
-.stNumberInput > div > div > input:focus {
-    border-color: rgb(38, 96, 65) !important;
-    box-shadow: 0 0 0 0.2rem rgba(38, 96, 65, 0.25) !important;
+/* ========== END INFUSION STYLING ========== */
+
+/* Patient data columns */
+[data-testid="column"] .stDateInput, 
+[data-testid="column"] .stRadio, 
+[data-testid="column"] .stNumberInput,
+[data-testid="column"] .stSelectbox {
+    margin-bottom: 10px !important;
 }
 
-/* Date input focus */
-[data-testid="stDateInput"] > div > div > input:focus {
-    border-color: rgb(38, 96, 65) !important;
-    box-shadow: 0 0 0 0.2rem rgba(38, 96, 65, 0.25) !important;
+/* Kontrolltermine checkboxes */
+[data-testid="column"] .stCheckbox {
+    margin: 5px 0 !important;
 }
 
-/* Error messages */
-.stAlert.st-emotion-cache-1wrcr25 {
-    border-left-color: rgb(38, 96, 65) !important;
+/* Suggestions buttons */
+div[data-testid="stHorizontalBlock"] button {
+    margin: 3px !important;
+    padding: 6px 10px !important;
+    font-size: 14px !important;
 }
 
-/* Warning messages */
-.stAlert.st-emotion-cache-1wrcr25.eeusbqq4 {
-    border-left-color: rgb(255, 193, 7) !important;
+/* Alert messages */
+.stAlert {
+    padding: 15px !important;
+    margin: 20px 0 !important;
+    font-size: 15px !important;
+    border-left-width: 5px !important;
 }
 
-/* Success messages */
-.stAlert.st-emotion-cache-1wrcr25.e1f1d6gn3 {
-    border-left-color: rgb(25, 135, 84) !important;
+/* Table text */
+.stTable {
+    font-size: 14px !important;
 }
 
-/* PDF header color */
+/* Number input buttons */
+.stNumberInput button {
+    padding: 0 10px !important;
+    font-size: 15px !important;
+}
+
+/* Date input */
+[data-testid="stDateInput"] input {
+    font-size: 15px !important;
+}
+
+/* Select box placeholder */
+.stSelectbox div[data-baseweb="select"] span {
+    font-size: 15px !important;
+}
+
+/* Multi-select tags */
+[data-baseweb="tag"] span {
+    font-size: 14px !important;
+    padding: 3px 8px !important;
+}
+
+/* Checkbox groups */
+.row-container {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 10px;
+}
+
+/* PDF header */
 .pdf-header {
     background-color: rgb(38, 96, 65) !important;
     color: white !important;
 }
 </style>
 """, unsafe_allow_html=True)
+
 
 # Header with three columns
 col1, col2, col3 = st.columns([1.2, 3, 0.7])
@@ -225,7 +505,7 @@ with col2:
 with col3:
     st.markdown('<div class="header-address">', unsafe_allow_html=True)
     st.markdown("""
-    <div style="font-size:14px; line-height:1.4;">
+    <div style="font-size:15px; line-height:1.8;">
     Clausewitzstr. 2<br>
     10629 Berlin-Charlottenburg<br>
     +49 30 6633110<br>
@@ -233,9 +513,9 @@ with col3:
     www.revitaclinic.de
     </div>
     """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    #st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown("<hr>", unsafe_allow_html=True)
+#st.markdown("<hr>", unsafe_allow_html=True)
 
 
 
@@ -435,6 +715,76 @@ DEFAULT_FORMS = {
     "SuperPatches Packung 28er": "Pflaster"
 }
 
+def therapy_progress_bar(therapiebeginn, dauer_monate):
+    """
+    Display a therapy progress bar with a small person figure
+    showing the current week of therapy
+    """
+    from datetime import date, datetime
+    
+    if not therapiebeginn or not dauer_monate:
+        return
+    
+    # Calculate weeks passed
+    today = date.today()
+    
+    # Handle date
+    if isinstance(therapiebeginn, str):
+        try:
+            therapiebeginn = datetime.strptime(therapiebeginn, "%Y-%m-%d").date()
+        except:
+            return
+    elif not isinstance(therapiebeginn, date):
+        return
+    
+    # If therapy hasn't started yet
+    if today < therapiebeginn:
+        return
+    
+    days_passed = (today - therapiebeginn).days
+    weeks_passed = days_passed // 7
+    total_weeks = dauer_monate * 4
+    progress = min(100, (weeks_passed / total_weeks * 100) if total_weeks > 0 else 0)
+    
+    # Create a VERY simple HTML progress bar
+    html = f"""
+    <div style="margin: 20px 0; padding: 15px; background: #f0f2f6; border-radius: 10px;">
+        <div style="font-weight: bold; color: rgb(38, 96, 65); margin-bottom: 10px;">
+            Therapie-Fortschritt: Woche {weeks_passed} von {total_weeks}
+        </div>
+        <div style="position: relative; height: 40px; background: #ddd; border-radius: 20px;">
+            <div style="width: {progress}%; height: 100%; background: rgb(38, 96, 65); border-radius: 20px;"></div>
+            <div style="position: absolute; top: 0; left: {progress}%; transform: translateX(-50%);">
+                <div style="background: white; border-radius: 50%; width: 40px; height: 40px; 
+                            border: 2px solid rgb(38, 96, 65); display: flex; align-items: center; 
+                            justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                    <span style="font-size: 24px;">👤</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    """
+    
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def get_current_therapy_week(therapiebeginn):
+    """Helper function to get current therapy week number"""
+    from datetime import date, datetime
+    
+    if not therapiebeginn:
+        return 0
+    
+    today = date.today()
+    if isinstance(therapiebeginn, str):
+        try:
+            therapiebeginn = datetime.strptime(therapiebeginn, "%Y-%m-%d").date()
+        except:
+            return 0
+    
+    days_passed = (today - therapiebeginn).days
+    return max(0, days_passed // 7)
+
 def patient_inputs():
     from datetime import date
     import streamlit as st
@@ -624,7 +974,7 @@ def patient_inputs():
     
     default_kontrolltermin_4 = pdata.get("kontrolltermin_4", False)
     default_kontrolltermin_12 = pdata.get("kontrolltermin_12", False)
-    default_kontrolltermin_24 = pdata.get("kontrolltermin_24", False)  # Add this line
+    default_kontrolltermin_24 = pdata.get("kontrolltermin_24", False)
     default_kontrolltermin_kommentar = pdata.get("kontrolltermin_kommentar", "")
 
     # --------------------------------------------------
@@ -685,12 +1035,12 @@ def patient_inputs():
     diagnosen = st.text_area(
         "Diagnosen",
         value=default_diagnosen,
-        height=100,
+        height=120,
         placeholder="Relevante Diagnosen...",
         key="diagnosen_input"
     )
 
-    # --------------------------------------------------
+        # --------------------------------------------------
     # Kontrolltermine
     # --------------------------------------------------
     st.markdown("---")
@@ -705,6 +1055,12 @@ def patient_inputs():
         kontrolltermin_24 = st.checkbox("24 Monate", value=default_kontrolltermin_24, key="kontrolltermin_24_input")
 
     kontrolltermin_kommentar = st.text_input("Kommentar:", value=default_kontrolltermin_kommentar, key="kontrolltermin_kommentar_input")
+
+        # --------------------------------------------------
+    # Therapy Progress Bar
+    # --------------------------------------------------
+    st.markdown("---")
+    therapy_progress_bar(therapiebeginn, dauer)
 
     # --------------------------------------------------
     # RETURN
@@ -726,7 +1082,8 @@ def patient_inputs():
         "kontrolltermin_kommentar": kontrolltermin_kommentar,
     }
 
-    return data    
+    return data
+
 # --- Helpers ---
 def _fmt_dt(d):
     try:
@@ -1199,7 +1556,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
     from io import BytesIO
     # Return the PDF as bytes for Streamlit download
     return pdf.output(dest='S').encode('latin-1')
- 
+
        
 # --- Main app ---
 def main():
@@ -1244,7 +1601,7 @@ def main():
     
     # Show save success message if set
     if st.session_state.get("show_save_success", False):
-        st.markdown('<div class="success-message">Alle Daten wurden erfolgreich gespeichert!</div>', unsafe_allow_html=True)
+        st.markdown('<div class="success-message">✅ Alle Daten wurden erfolgreich gespeichert!</div>', unsafe_allow_html=True)
         # Clear the message after 3 seconds
         time.sleep(3)
         st.session_state.show_save_success = False
@@ -1297,43 +1654,6 @@ def main():
             # Get data from session state
             therapieplan_data = st.session_state.get('therapieplan_data', {})
             
-            # Add CSS for green section headers
-            st.markdown("""
-            <style>
-            .green-section-header {
-                background-color: rgb(38, 96, 65);
-                color: white;
-                padding: 10px;
-                border-radius: 4px;
-                margin: 1px 0 10px 0;
-                font-weight: bold;
-            }
-            .section-subheader {
-                font-weight: bold;
-                font-size: 1.1em;
-                margin-top: 15px;
-                margin-bottom: 10px;
-                color: rgb(38, 96, 65);
-            }
-            .checkbox-group {
-                margin-bottom: 10px;
-            }
-            .text-input-group {
-                margin-top: 10px;
-                margin-bottom: 15px;
-                padding-left: 20px;
-            }
-            .row-container {
-                display: flex;
-                gap: 20px;
-                margin-bottom: 15px;
-            }
-            .row-item {
-                flex: 1;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-            
             # SECTION 1: Diagnostik & Überprüfung (FIRST)
             st.markdown('<div class="green-section-header">Diagnostik & Überprüfung</div>', unsafe_allow_html=True)
             
@@ -1351,7 +1671,7 @@ def main():
             
             st.markdown("---")
             
-            # Sub-section: Bewegungsapparat & Schwermetalle (NOW BEFORE Labor)
+            # Sub-section: Bewegungsapparat & Schwermetalle
             st.markdown('<div class="section-subheader">Bewegungsapparat & Schwermetalle</div>', unsafe_allow_html=True)
             
             analyse_bewegungsapparat = st.checkbox("Analyse Bewegungsapparat (Martin)", 
@@ -1364,7 +1684,7 @@ def main():
             
             st.markdown("---")
             
-            # Sub-section: Labor & Diagnostik (NOW AFTER Bewegungsapparat)
+            # Sub-section: Labor & Diagnostik
             st.markdown('<div class="section-subheader">Labor & Diagnostik</div>', unsafe_allow_html=True)
             
             lab_imd = st.text_input("IMD:", value=therapieplan_data.get("lab_imd", ""), key="lab_imd_input")
@@ -1373,9 +1693,8 @@ def main():
             lab_sonstiges = st.text_input("Sonstiges:", value=therapieplan_data.get("lab_sonstiges", ""), key="lab_sonstiges_input")
             
             st.markdown("---")
-            st.markdown("---")
             
-            # SECTION 2: Therapieformen (SECOND)
+            # SECTION 2: Therapieformen
             st.markdown('<div class="green-section-header">Therapieformen</div>', unsafe_allow_html=True)
             
             # SECTION 3: Darm & Entgiftung
@@ -1559,7 +1878,6 @@ def main():
             # Sub-section: Gesprächstermine
             st.markdown('<div class="section-subheader">Gesprächstermine</div>', unsafe_allow_html=True)
             
-            
             zwischengespraech_4 = st.checkbox("Zwischengespräch nach 4 Wochen (1/2h)", 
                                             value=therapieplan_data.get("zwischengespraech_4", False),
                                             key="zwischengespraech_4_checkbox")
@@ -1570,8 +1888,6 @@ def main():
             
             st.markdown("---")
             
-            
-
             # SECTION 4: Infektionen & Ausleitung
             st.markdown('<div class="green-section-header">Infektionen & Ausleitung</div>', unsafe_allow_html=True)
 
@@ -1689,25 +2005,6 @@ def main():
             # Initialize expanded state for categories
             if 'category_states' not in st.session_state:
                 st.session_state.category_states = {}
-            
-            # Minimal CSS for clean appearance
-            st.markdown("""
-            <style>
-                /* Ensure proper spacing */
-                div[data-testid="stVerticalBlock"] > div:has(div[data-testid="stVerticalBlock"] div[data-testid="stExpander"]) {
-                    padding-top: 0rem;
-                }
-                
-                /* Make header slightly shaded for visibility */
-                .sticky-header {
-                    background-color: #f8f9fa;
-                    padding: 8px 8;
-                    border-bottom: 2px solid rgb(38, 96, 65);
-                    margin-bottom: 5px;
-                    border-radius: 4px 4px 0 0;
-                }
-            </style>
-            """, unsafe_allow_html=True)
             
             # Use a form for better data handling
             with st.form("nem_form", clear_on_submit=False):
@@ -1993,287 +2290,9 @@ def main():
                 else:
                     st.warning("⚠️ Keine NEM-Supplemente ausgewählt. Bitte mindestens ein Supplement mit Dosierung oder Einnahmezeiten ausfüllen.")
          
-
     with tabs[2]:  # Infusionstherapie Tab
         # Get data from session state
         infusion_data = st.session_state.get('infusion_data', {})
-        
-        # Add CSS for green section headers and info icons
-        st.markdown("""
-        <style>
-        .green-section-header {
-            background-color: rgb(38, 96, 65);
-            color: white;
-            padding: 12px;
-            border-radius: 4px;
-            margin: 1px 0 15px 0;
-            font-weight: bold;
-            font-size: 18px;
-        }
-        .section-subheader {
-            font-weight: bold;
-            font-size: 16px;
-            margin-top: 20px;
-            margin-bottom: 12px;
-            color: rgb(38, 96, 65);
-        }
-        .info-icon {
-            display: inline-block;
-            width: 18px;
-            height: 18px;
-            background-color: rgb(38, 96, 65);
-            color: white;
-            border-radius: 50%;
-            text-align: center;
-            line-height: 18px;
-            font-size: 12px;
-            font-weight: bold;
-            margin-left: 8px;
-            cursor: help;
-            position: relative;
-            vertical-align: middle;
-        }
-        .info-icon:hover::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            left: 22px;
-            top: -10px;
-            background-color: #333;
-            color: white;
-            padding: 10px 15px;
-            border-radius: 4px;
-            font-size: 14px;
-            white-space: nowrap;
-            z-index: 1000;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        .info-icon:hover::before {
-            content: '';
-            position: absolute;
-            left: 16px;
-            top: 4px;
-            border-width: 5px;
-            border-style: solid;
-            border-color: transparent #333 transparent transparent;
-            z-index: 1000;
-        }
-        
-        /* Make all text inputs, select boxes, and checkboxes larger */
-        .stTextInput input, .stSelectbox div, .stMultiSelect div, .stDateInput input {
-            font-size: 16px !important;
-            padding: 10px !important;
-        }
-        
-        .stCheckbox label {
-            font-size: 16px !important;
-            padding-top: 5px !important;
-            padding-bottom: 5px !important;
-        }
-        
-        .stCheckbox [data-testid="stCheckbox"] {
-            transform: scale(1.2);
-            margin-right: 10px;
-        }
-        
-        .stSelectbox div[data-baseweb="select"] {
-            font-size: 16px !important;
-            min-height: 45px !important;
-        }
-        
-        .stMultiSelect div[data-baseweb="select"] {
-            font-size: 16px !important;
-            min-height: 45px !important;
-        }
-        
-        /* Make dropdown options larger */
-        div[role="listbox"] ul li {
-            font-size: 16px !important;
-            padding: 10px !important;
-        }
-        
-        /* Custom elements */
-        .infusion-label {
-            font-size: 16px !important;
-            line-height: 1.4;
-        }
-        
-        .checkbox-cell {
-            display: flex;
-            align-items: center;
-        }
-        
-        .checkbox-cell [data-testid="stCheckbox"] {
-            margin-right: 8px;
-        }
-        
-        .label-with-icon {
-            display: flex;
-            align-items: center;
-            white-space: nowrap;
-            font-size: 16px;
-        }
-        
-        .procain-field {
-            margin-top: 5px;
-            margin-bottom: 0;
-            width: 100%;
-        }
-        
-        .procain-field .stTextInput input {
-            font-size: 16px !important;
-            padding: 8px !important;
-        }
-        
-        .header-row {
-            display: flex;
-            align-items: center;
-            margin-bottom: 15px;
-            font-weight: bold;
-            padding: 8px 0;
-            border-bottom: 2px solid rgb(38, 96, 65);
-            font-size: 16px;
-        }
-        
-        hr {
-            margin-top: 8px;
-            margin-bottom: 20px;
-            border-width: 1px;
-        }
-        
-        /* Make placeholder text larger */
-        input::placeholder, select::placeholder {
-            font-size: 16px !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        # Helper function to create infusion row with 3 columns
-        def infusion_row(label, key_prefix, tooltip, default_checked=False, default_weeks="", default_freq=""):
-            # Create unique keys for each element
-            checkbox_key = f"inf_{key_prefix}_cb"
-            weeks_key = f"inf_{key_prefix}_weeks"
-            freq_key = f"inf_{key_prefix}_freq"
-            
-            # Create 3 columns for the row
-            cols = st.columns([2, 1, 1])
-            
-            with cols[0]:
-                # Create a row with checkbox and label
-                cb_col, label_col = st.columns([0.1, 0.9])
-                with cb_col:
-                    value = st.checkbox(
-                        " ", 
-                        value=infusion_data.get(key_prefix, default_checked),
-                        key=checkbox_key,
-                        label_visibility="collapsed"
-                    )
-                with label_col:
-                    label_html = f'''
-                    <div style="display: flex; align-items: center; height: 45px;">
-                        <span style="display: flex; align-items: center;" class="infusion-label">
-                            <span>{label}</span>
-                            <span class="info-icon" data-tooltip="{tooltip}" style="margin-left: 8px;">i</span>
-                        </span>
-                    </div>
-                    '''
-                    st.markdown(label_html, unsafe_allow_html=True)
-            
-            with cols[1]:
-                # Anzahl Wochen dropdown
-                weeks_options = ["", "1 Woche", "2 Wochen", "3 Wochen", "4 Wochen", "6 Wochen", "8 Wochen", "12 Wochen"]
-                weeks_value = st.selectbox(
-                    " ",
-                    weeks_options,
-                    index=weeks_options.index(infusion_data.get(weeks_key, default_weeks)) 
-                        if infusion_data.get(weeks_key, default_weeks) in weeks_options else 0,
-                    key=weeks_key,
-                    label_visibility="collapsed",
-                    placeholder="Wochen"
-                )
-            
-            with cols[2]:
-                # Häufigkeit pro Woche dropdown
-                freq_options = ["", "1x/Woche", "2x/Woche", "3x/Woche", "4x/Woche", "5x/Woche", "6x/Woche", "7x/Woche (täglich)"]
-                freq_value = st.selectbox(
-                    " ",
-                    freq_options,
-                    index=freq_options.index(infusion_data.get(freq_key, default_freq)) 
-                        if infusion_data.get(freq_key, default_freq) in freq_options else 0,
-                    key=freq_key,
-                    label_visibility="collapsed",
-                    placeholder="Häufigkeit"
-                )
-            
-            return value, weeks_value, freq_value
-        
-        # Special function for Procain row with additional text field
-        def procain_row(label, key_prefix, tooltip, default_checked=False, default_weeks="", default_freq="", default_procain=""):
-            # Create unique keys
-            checkbox_key = f"inf_{key_prefix}_cb"
-            weeks_key = f"inf_{key_prefix}_weeks"
-            freq_key = f"inf_{key_prefix}_freq"
-            procain_key = f"inf_{key_prefix}_procain"
-            
-            # Create 3 columns for the row
-            cols = st.columns([2, 1, 1])
-            
-            with cols[0]:
-                # Checkbox and label in one row, Procain field directly below
-                cb_col, label_col = st.columns([0.1, 0.9])
-                with cb_col:
-                    value = st.checkbox(
-                        " ", 
-                        value=infusion_data.get(key_prefix, default_checked),
-                        key=checkbox_key,
-                        label_visibility="collapsed"
-                    )
-                with label_col:
-                    label_html = f'''
-                    <div style="display: flex; align-items: center; height: 45px;">
-                        <span style="display: flex; align-items: center;" class="infusion-label">
-                            <span>{label}</span>
-                            <span class="info-icon" data-tooltip="{tooltip}" style="margin-left: 8px;">i</span>
-                        </span>
-                    </div>
-                    '''
-                    st.markdown(label_html, unsafe_allow_html=True)
-                    
-                    # Procain field directly below the label (within the same column)
-                    procain_value = st.text_input(
-                        "Procain 2% (ml)",
-                        value=infusion_data.get(procain_key, default_procain),
-                        key=procain_key,
-                        placeholder="ml",
-                        label_visibility="collapsed"
-                    )
-            
-            with cols[1]:
-                # Anzahl Wochen dropdown
-                weeks_options = ["", "1 Woche", "2 Wochen", "3 Wochen", "4 Wochen", "6 Wochen", "8 Wochen", "12 Wochen"]
-                weeks_value = st.selectbox(
-                    " ",
-                    weeks_options,
-                    index=weeks_options.index(infusion_data.get(weeks_key, default_weeks)) 
-                        if infusion_data.get(weeks_key, default_weeks) in weeks_options else 0,
-                    key=weeks_key,
-                    label_visibility="collapsed",
-                    placeholder="Wochen"
-                )
-            
-            with cols[2]:
-                # Häufigkeit pro Woche dropdown
-                freq_options = ["", "1x/Woche", "2x/Woche", "3x/Woche", "4x/Woche", "5x/Woche", "6x/Woche", "7x/Woche (täglich)"]
-                freq_value = st.selectbox(
-                    " ",
-                    freq_options,
-                    index=freq_options.index(infusion_data.get(freq_key, default_freq)) 
-                        if infusion_data.get(freq_key, default_freq) in freq_options else 0,
-                    key=freq_key,
-                    label_visibility="collapsed",
-                    placeholder="Häufigkeit"
-                )
-            
-            return value, weeks_value, freq_value, procain_value
         
         # Section: Infusionstherapie
         st.markdown('<div class="green-section-header">Infusionstherapie</div>', unsafe_allow_html=True)
@@ -2281,18 +2300,156 @@ def main():
         # Header row for the 3-column layout
         header_cols = st.columns([2, 1, 1])
         with header_cols[0]:
-            st.markdown('<p style="font-size: 16px; font-weight: bold; margin: 0;">Infusion</p>', unsafe_allow_html=True)
+            st.markdown('<p class="infusion-header">Infusion</p>', unsafe_allow_html=True)
         with header_cols[1]:
-            st.markdown('<p style="font-size: 16px; font-weight: bold; margin: 0;">Anzahl Wochen</p>', unsafe_allow_html=True)
+            st.markdown('<p class="infusion-header">Anzahl Wochen</p>', unsafe_allow_html=True)
         with header_cols[2]:
-            st.markdown('<p style="font-size: 16px; font-weight: bold; margin: 0;">Häufigkeit/Woche</p>', unsafe_allow_html=True)
+            st.markdown('<p class="infusion-header">Häufigkeit/Woche</p>', unsafe_allow_html=True)
         
         st.markdown("<hr style='margin-top: 5px; margin-bottom: 20px; border-color: rgb(38, 96, 65); border-width: 2px;'>", unsafe_allow_html=True)
+        
+        # Helper function to create infusion row with perfect alignment
+        def infusion_row(label, key_prefix, tooltip, default_checked=False, default_weeks="", default_freq=""):
+            checkbox_key = f"inf_{key_prefix}_cb"
+            weeks_key = f"inf_{key_prefix}_weeks"
+            freq_key = f"inf_{key_prefix}_freq"
+
+            cols = st.columns([2, 1, 1])
+
+            with cols[0]:
+                row = st.columns([0.08, 0.92])
+
+                with row[0]:
+                    value = st.checkbox(
+                        "",
+                        value=infusion_data.get(key_prefix, default_checked),
+                        key=checkbox_key,
+                        label_visibility="collapsed"
+                    )
+
+                with row[1]:
+                    st.markdown(
+                        f"""
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            gap:4px;
+                            margin-top:8px;
+                        ">
+                            <span style="font-size:15px; line-height:1;">{label}</span>
+                            <span class="info-icon" data-tooltip="{tooltip}" style="margin-left:2px;">ⓘ</span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+            with cols[1]:
+                weeks_options = ["", "1 Woche", "2 Wochen", "3 Wochen", "4 Wochen", "6 Wochen", "8 Wochen", "12 Wochen"]
+                weeks_value = st.selectbox(
+                    "",
+                    weeks_options,
+                    index=weeks_options.index(infusion_data.get(weeks_key, default_weeks))
+                    if infusion_data.get(weeks_key, default_weeks) in weeks_options else 0,
+                    key=weeks_key,
+                    label_visibility="collapsed",
+                    placeholder="Wochen"
+                )
+
+            with cols[2]:
+                freq_options = ["", "1x/Woche", "2x/Woche", "3x/Woche", "4x/Woche", "5x/Woche", "6x/Woche", "7x/Woche (täglich)"]
+                freq_value = st.selectbox(
+                    "",
+                    freq_options,
+                    index=freq_options.index(infusion_data.get(freq_key, default_freq))
+                    if infusion_data.get(freq_key, default_freq) in freq_options else 0,
+                    key=freq_key,
+                    label_visibility="collapsed",
+                    placeholder="Häufigkeit"
+                )
+
+            return value, weeks_value, freq_value
+
+        # Special function for Procain row with additional text field
+        def procain_row(label, key_prefix, tooltip, default_checked=False, default_weeks="", default_freq="", default_procain=""):
+            checkbox_key = f"inf_{key_prefix}_cb"
+            weeks_key = f"inf_{key_prefix}_weeks"
+            freq_key = f"inf_{key_prefix}_freq"
+            procain_key = f"inf_{key_prefix}_procain"
+            
+            if "infusion_data" not in st.session_state:
+                st.session_state.infusion_data = {}
+
+            current_procain = st.session_state.infusion_data.get(procain_key, default_procain)
+            
+            cols = st.columns([2, 1, 1])
+            
+            with cols[0]:
+                cb_col, label_col = st.columns([0.1, 0.9])
+                
+                with cb_col:
+                    value = st.checkbox(
+                        " ",
+                        value=st.session_state.infusion_data.get(key_prefix, default_checked),
+                        key=checkbox_key,
+                        label_visibility="collapsed"
+                    )
+                
+                with label_col:
+                    input_id = f"procain_input_{key_prefix}"
+                    # Keep original tooltip span
+                    st.markdown(f'''
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-size: 15px; white-space: nowrap;">{label}</span>
+                        <span class="info-icon" data-tooltip="{tooltip}">ⓘ</span>
+                        <input id="{input_id}" type="text" placeholder="ml" value="{current_procain}" 
+                            style="width: 50px; padding: 2px 6px; font-size: 14px; border-radius: 4px; border:1px solid #ccc;">
+                    </div>
+                    <script>
+                    const htmlInput = document.getElementById('{input_id}');
+                    htmlInput.addEventListener('input', function(e) {{
+                        // Update session state directly
+                        const data = window.parent.document.querySelectorAll('[data-testid="stTextInput"]');
+                        for (let input of data) {{
+                            if (input.value === input.defaultValue) {{
+                                input.value = e.target.value;
+                                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                break;
+                            }}
+                        }}
+                    }});
+                    </script>
+                    ''', unsafe_allow_html=True)
+            
+            with cols[1]:
+                weeks_options = ["", "1 Woche", "2 Wochen", "3 Wochen", "4 Wochen", "6 Wochen", "8 Wochen", "12 Wochen"]
+                weeks_value = st.selectbox(
+                    " ",
+                    weeks_options,
+                    index=weeks_options.index(st.session_state.infusion_data.get(weeks_key, default_weeks)) 
+                        if st.session_state.infusion_data.get(weeks_key, default_weeks) in weeks_options else 0,
+                    key=weeks_key,
+                    label_visibility="collapsed",
+                    placeholder="Wochen"
+                )
+            
+            with cols[2]:
+                freq_options = ["", "1x/Woche", "2x/Woche", "3x/Woche", "4x/Woche", "5x/Woche", "6x/Woche", "7x/Woche (täglich)"]
+                freq_value = st.selectbox(
+                    " ",
+                    freq_options,
+                    index=freq_options.index(st.session_state.infusion_data.get(freq_key, default_freq)) 
+                        if st.session_state.infusion_data.get(freq_key, default_freq) in freq_options else 0,
+                    key=freq_key,
+                    label_visibility="collapsed",
+                    placeholder="Häufigkeit"
+                )
+            
+            return value, weeks_value, freq_value, current_procain
         
         # Sub-section: RevitaClinic Infusionen
         st.markdown('<div class="section-subheader">RevitaClinic Infusionen</div>', unsafe_allow_html=True)
         
-        # All RevitaClinic infusions with 3-column layout
+        # All RevitaClinic infusions
         revita_immune, revita_immune_weeks, revita_immune_freq = infusion_row(
             "RevitaImmune", 
             "revita_immune",
@@ -2415,15 +2572,15 @@ def main():
         # Header row for Standard Infusionen
         std_header_cols = st.columns([2, 1, 1])
         with std_header_cols[0]:
-            st.markdown('<p style="font-size: 16px; font-weight: bold; margin: 0;">Infusion</p>', unsafe_allow_html=True)
+            st.markdown('<p class="infusion-header">Infusion</p>', unsafe_allow_html=True)
         with std_header_cols[1]:
-            st.markdown('<p style="font-size: 16px; font-weight: bold; margin: 0;">Anzahl Wochen</p>', unsafe_allow_html=True)
+            st.markdown('<p class="infusion-header">Anzahl Wochen</p>', unsafe_allow_html=True)
         with std_header_cols[2]:
-            st.markdown('<p style="font-size: 16px; font-weight: bold; margin: 0;">Häufigkeit/Woche</p>', unsafe_allow_html=True)
+            st.markdown('<p class="infusion-header">Häufigkeit/Woche</p>', unsafe_allow_html=True)
         
         st.markdown("<hr style='margin-top: 5px; margin-bottom: 20px; border-color: rgb(38, 96, 65); border-width: 2px;'>", unsafe_allow_html=True)
         
-        # All Standard Infusionen with 3-column layout
+        # All Standard Infusionen
         mito_energy, mito_energy_weeks, mito_energy_freq = infusion_row(
             "Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)", 
             "std_mito_energy",
@@ -2442,7 +2599,7 @@ def main():
             "Test mit DMSA und Ca EDTA"
         )
         
-        # Procain row with special handling for the text field
+        # Procain row with special handling
         procain_basen, procain_basen_weeks, procain_basen_freq, procain_2percent = procain_row(
             "Procain Baseninfusion mit Magnesium", 
             "std_procain_basen",
@@ -2479,8 +2636,6 @@ def main():
             "Aufbauinfusion nach Detox"
         )
         
-        
-        
         anti_aging, anti_aging_weeks, anti_aging_freq = infusion_row(
             "Anti Aging Infusion komplett", 
             "std_anti_aging",
@@ -2516,10 +2671,10 @@ def main():
             "std_relax_infusion",
             "Relax Infusion"
         )
-        
+
         st.markdown("---")
         
-        # Additional fields that don't fit in the 3-column layout
+        # Additional fields
         st.markdown('<div class="section-subheader">Weitere Angaben</div>', unsafe_allow_html=True)
         
         infektions_infusion = st.text_input(
@@ -2563,21 +2718,21 @@ def main():
 
         st.markdown("---")
         
-        # Sub-section: Single Ingredients / Einzel
+        # Sub-section: Single Ingredients
         st.markdown('<div class="section-subheader">Single Ingredients / Einzel</div>', unsafe_allow_html=True)
         
         # Header row for Single Ingredients
         single_header_cols = st.columns([2, 1, 1])
         with single_header_cols[0]:
-            st.markdown('<p style="font-size: 16px; font-weight: bold; margin: 0;">Infusion</p>', unsafe_allow_html=True)
+            st.markdown('<p class="infusion-header">Infusion</p>', unsafe_allow_html=True)
         with single_header_cols[1]:
-            st.markdown('<p style="font-size: 16px; font-weight: bold; margin: 0;">Anzahl Wochen</p>', unsafe_allow_html=True)
+            st.markdown('<p class="infusion-header">Anzahl Wochen</p>', unsafe_allow_html=True)
         with single_header_cols[2]:
-            st.markdown('<p style="font-size: 16px; font-weight: bold; margin: 0;">Häufigkeit/Woche</p>', unsafe_allow_html=True)
+            st.markdown('<p class="infusion-header">Häufigkeit/Woche</p>', unsafe_allow_html=True)
         
         st.markdown("<hr style='margin-top: 5px; margin-bottom: 20px; border-color: rgb(38, 96, 65); border-width: 2px;'>", unsafe_allow_html=True)
         
-        # Single Ingredients with 3-column layout
+        # Single Ingredients
         vitamin_c, vitamin_c_weeks, vitamin_c_freq = infusion_row(
             "Hochdosis Vitamin C (g)", 
             "single_vitamin_c",
@@ -2623,7 +2778,7 @@ def main():
             placeholder="Zusätze auswählen..."
         )
         
-        # Update session state for infusion data with all values
+        # Update session state
         st.session_state.infusion_data = {
             # RevitaClinic Infusionen
             "revita_immune": revita_immune,
@@ -2760,12 +2915,11 @@ def main():
             "zusaetze": zusaetze,
         }
         
-        # PDF button for Infusionstherapie
+        # PDF button (only once!)
         if st.button("Infusionstherapie PDF generieren", key="infusion_pdf_button"):
             pdf_bytes = generate_pdf(patient, st.session_state.infusion_data, "INFUSIONSTHERAPIE")
             filename = f"RevitaClinic_Infusionstherapie_{patient.get('patient','')}.pdf"
             
-            # Set auto-download
             st.session_state.auto_download_pdf = {
                 "data": pdf_bytes,
                 "filename": filename,
@@ -2773,7 +2927,6 @@ def main():
             }
             st.rerun()
 
- 
     # Handle save button (saves all tabs)
     if save_button:
         if not patient["patient"]:
