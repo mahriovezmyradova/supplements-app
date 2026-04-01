@@ -419,24 +419,32 @@ def _sched_header():
          "border-bottom:2px solid rgba(38,96,65,.2);white-space:nowrap;'>{}</div>")
     h = st.columns(ROW_COLS)
     h[0].markdown(H.format("&nbsp;"),         unsafe_allow_html=True)
-    h[1].markdown(H.format("Wo&nbsp;von"),    unsafe_allow_html=True)
-    h[2].markdown(H.format("Wo&nbsp;bis"),    unsafe_allow_html=True)
+    h[1].markdown(H.format("Wo.&nbsp;Start"), unsafe_allow_html=True)
+    h[2].markdown(H.format("Wo.&nbsp;Ende"),  unsafe_allow_html=True)
     h[3].markdown(H.format("Häufigkeit"),     unsafe_allow_html=True)
     h[4].markdown(H.format("Von&nbsp;Datum"), unsafe_allow_html=True)
     h[5].markdown(H.format("Bis&nbsp;Datum"), unsafe_allow_html=True)
 
 
-def _extra_rows(section_key, kp, data_store, therapiebeginn, dauer, schedule_dict):
-    """2 free-text extra rows per section for ad-hoc additions."""
+def _extra_rows(section_key, kp, data_store, therapiebeginn, dauer, schedule_dict, no_auto_date=False):
+    """2 free-text extra rows. Checkbox controls PDF inclusion."""
     for i in range(1, 3):
-        slug  = f"{section_key}_extra{i}"
-        cols  = st.columns(ROW_COLS)
+        slug    = f"{section_key}_extra{i}"
+        cb_key  = slug + "_cb"
+        cols    = st.columns(ROW_COLS)
         with cols[0]:
-            val = st.text_input("", value=data_store.get(slug + "_text", ""),
-                key=slug + "_text_input", placeholder=f"Zusatz {i}...", label_visibility="collapsed")
+            cb_c, txt_c = st.columns([0.07, 0.93])
+            with cb_c:
+                checked = st.checkbox("", value=bool(data_store.get(cb_key, False)),
+                    key=cb_key, label_visibility="collapsed")
+            with txt_c:
+                val = st.text_input("", value=data_store.get(slug + "_text", ""),
+                    key=slug + "_text_input", placeholder=f"Zusatz {i}...", label_visibility="collapsed")
+        _tb = None if (no_auto_date and not data_store.get(f"{kp}_{slug}_date_start")) else therapiebeginn
         schedule_dict.update(
-            _inline_timing(bool(val), slug, therapiebeginn, dauer, kp, data_store, cols))
+            _inline_timing(checked and bool(val), slug, _tb, dauer, kp, data_store, cols))
         schedule_dict[slug + "_text"] = val
+        schedule_dict[cb_key] = checked
 
 
 def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, data_store, cols):
@@ -459,7 +467,7 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
                 try: return _dt.datetime.strptime(v, fmt).date()
                 except: pass
         return None
-    tb = _coerce_date(therapiebeginn) or _dt.date.today()
+    tb = _coerce_date(therapiebeginn)  # None = no auto-date
 
     w_start_key = f"{key_prefix}_{slug}_w_start"
     w_end_key   = f"{key_prefix}_{slug}_w_end"
@@ -493,21 +501,25 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
     freq = cols[3].selectbox("", freq_options, index=fi,
         key=f"fr_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
 
-    # Compute dates from therapiebeginn + chosen week (the auto value).
     w_start_int = int(w_start_sel)
     w_end_int   = int(w_end_sel)
-    auto_ds = tb + timedelta(weeks=w_start_int - 1)
-    auto_de = tb + timedelta(weeks=w_end_int) - timedelta(days=1)
-
-    # Dates always computed from therapiebeginn + chosen weeks.
-    # Dynamic key: changes whenever auto date changes → Streamlit creates
-    # a fresh widget with the correct value each time.
-    ds_widget_key = f"ds_{key_prefix}_{slug}_{auto_ds.isoformat()}"
-    de_widget_key = f"de_{key_prefix}_{slug}_{auto_de.isoformat()}"
-    date_start = cols[4].date_input("", value=auto_ds, format="DD.MM.YYYY",
-        key=ds_widget_key, disabled=not is_checked, label_visibility="collapsed")
-    date_end   = cols[5].date_input("", value=auto_de, format="DD.MM.YYYY",
-        key=de_widget_key, disabled=not is_checked, label_visibility="collapsed")
+    if tb is not None:
+        auto_ds = tb + timedelta(weeks=w_start_int - 1)
+        auto_de = tb + timedelta(weeks=w_end_int) - timedelta(days=1)
+        date_start = cols[4].date_input("", value=auto_ds, format="DD.MM.YYYY",
+            key=f"ds_{key_prefix}_{slug}_{auto_ds.isoformat()}", disabled=not is_checked, label_visibility="collapsed")
+        date_end   = cols[5].date_input("", value=auto_de, format="DD.MM.YYYY",
+            key=f"de_{key_prefix}_{slug}_{auto_de.isoformat()}", disabled=not is_checked, label_visibility="collapsed")
+    else:
+        # No auto-date: empty calendar, patient picks manually
+        _ds_saved = _coerce_date(data_store.get(ds_key)) if data_store.get(ds_key) else None
+        _de_saved = _coerce_date(data_store.get(de_key)) if data_store.get(de_key) else None
+        date_start = cols[4].date_input("", value=_ds_saved, format="DD.MM.YYYY",
+            key=f"ds_{key_prefix}_{slug}_free", disabled=not is_checked, label_visibility="collapsed")
+        date_end   = cols[5].date_input("", value=_de_saved, format="DD.MM.YYYY",
+            key=f"de_{key_prefix}_{slug}_free", disabled=not is_checked, label_visibility="collapsed")
+        auto_ds = date_start or _dt.date.today()
+        auto_de = date_end   or _dt.date.today()
 
     return {
         w_start_key: w_start_sel, w_end_key: w_end_sel,
@@ -1140,6 +1152,13 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             if _prescribed(key):
                 _add_row(lbl, key, "inf")
 
+        # Custom Sonstiges rows
+        for idx in [1, 2]:
+            _cb  = supplements.get(f"inf_custom{idx}_cb", False)
+            _txt = supplements.get(f"inf_custom{idx}_text", "")
+            if _cb and _txt and str(_txt).strip():
+                _add_row(str(_txt), f"inf_custom{idx}", "inf", None)
+
         for key, lbl in [
             ("infektions_infusion","Infektions-Infusion / H2O2"),
             ("immun_booster","Immun-Boosterung"),
@@ -1153,12 +1172,13 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                 _add_row(lbl, key, "inf", None)
                 if cmt_str: rows[-1] = (rows[-1][0], clean_text(cmt_str)) + rows[-1][2:]
 
-        # Extra rows from all sections
+        # Extra rows — only if checkbox checked (legacy rows without cb included by default)
         for i in range(1, 3):
             for sec in ("diag","haupt","bio","gesp","inf"):
-                slug  = f"{sec}_extra{i}"
-                txt   = supplements.get(slug + "_text", "")
-                if txt and str(txt).strip():
+                slug   = f"{sec}_extra{i}"
+                txt    = supplements.get(slug + "_text", "")
+                cb_val = supplements.get(slug + "_cb", True)  # True = legacy compat
+                if txt and str(txt).strip() and cb_val:
                     _add_row(str(txt), slug, sec)
 
         # ── Render table ──
@@ -1457,7 +1477,8 @@ def patient_inputs():
 
     # Vorschläge: show matching buttons when typing
     if typed and typed not in patient_names and not st.session_state.just_loaded_patient:
-        suggestions = [n for n in patient_names if typed.lower() in n.lower()]
+        _typed_words = [w.strip() for w in typed.lower().split() if w.strip()]
+        suggestions = [n for n in patient_names if any(w in n.lower() for w in _typed_words)]
         if suggestions:
             st.markdown("**Vorschläge:**")
             cols = st.columns(min(len(suggestions), 3))
@@ -1532,9 +1553,16 @@ def patient_inputs():
     st.markdown("---")
     st.markdown("#### Kontrolltermine")
     col1,col2,col3 = st.columns(3)
-    with col1: kontrolltermin_4  = st.checkbox("4 Wochen",  value=default_kt4,  key="kontrolltermin_4_input")
-    with col2: kontrolltermin_12 = st.checkbox("12 Wochen", value=default_kt12, key="kontrolltermin_12_input")
-    with col3: kontrolltermin_24 = st.checkbox("24 Monate", value=default_kt24, key="kontrolltermin_24_input")
+    _total_weeks = int(dauer) * 4
+    _kt4_ok  = _total_weeks >= 4
+    _kt12_ok = _total_weeks >= 12
+    _kt24_ok = _total_weeks >= 24
+    with col1:
+        kontrolltermin_4  = st.checkbox("4 Wochen",  value=default_kt4  and _kt4_ok,  key="kontrolltermin_4_input",  disabled=not _kt4_ok,  help=None if _kt4_ok  else f"Dauer {dauer} Mon. zu kurz")
+    with col2:
+        kontrolltermin_12 = st.checkbox("12 Wochen", value=default_kt12 and _kt12_ok, key="kontrolltermin_12_input", disabled=not _kt12_ok, help=None if _kt12_ok else f"Dauer {dauer} Mon. zu kurz")
+    with col3:
+        kontrolltermin_24 = st.checkbox("24 Wochen", value=default_kt24 and _kt24_ok, key="kontrolltermin_24_input", disabled=not _kt24_ok, help=None if _kt24_ok else f"Dauer {dauer} Mon. zu kurz")
     kontrolltermin_kommentar = st.text_area("Kommentar:", value=default_kt_kommentar, height=100,
         placeholder="Kommentar zu Kontrollterminen...", key="kontrolltermin_kommentar_input")
 
@@ -1585,24 +1613,18 @@ def main():
     if st.session_state.get('just_loaded_patient', False):
         st.session_state.just_loaded_patient = False
 
-    # ── Full wipe after delete: runs BEFORE patient_inputs() ───────────
+    # ── Full wipe after delete ───────────────────────────────────────────
+    # st.session_state.clear() removes ALL keys including widget keys.
+    # This is safe here because we are BEFORE patient_inputs() renders,
+    # so no widgets have been instantiated in this run yet.
     if st.session_state.get("_do_full_wipe"):
-        # Wipe everything — only keep the reset dropdown flag
-        keys_to_del = [k for k in list(st.session_state.keys())
-                       if k != "_reset_dropdown"]
-        for k in keys_to_del:
-            del st.session_state[k]
-        # Set all clean defaults
-        st.session_state.update({
-            "patient_data": {}, "nem_prescriptions": [],
-            "therapieplan_data": {}, "ernaehrung_data": {}, "infusion_data": {},
-            "last_loaded_patient": None, "display_patient_name": "",
-            "current_patient_input": "", "just_loaded_patient": False,
-            "clicked_suggestion": None, "show_delete_confirmation": False,
-            "show_save_success": False, "auto_download_pdf": None,
-            "nem_pdf_bytes": None, "category_states": {},
-            "_just_saved_patient": "", "_reset_dropdown": True,
-        })
+        st.session_state.clear()
+        st.session_state["patient_data"]      = {}
+        st.session_state["nem_prescriptions"] = []
+        st.session_state["therapieplan_data"] = {}
+        st.session_state["ernaehrung_data"]   = {}
+        st.session_state["infusion_data"]     = {}
+        st.session_state["_reset_dropdown"]   = True
         st.rerun()
 
     patient = patient_inputs()
@@ -1650,13 +1672,19 @@ def main():
     )
 
     # ── Action buttons row ──────────────────────────────────────────────────
+    if "show_delete_confirmation" not in st.session_state:
+        st.session_state.show_delete_confirmation = False
     _btn_cols = st.columns([1, 1, 6])
     with _btn_cols[0]:
         save_button = st.button("💾 Speichern", key="save_btn_main", use_container_width=True)
     with _btn_cols[1]:
-        if is_saved_patient:
-            if st.button("🗑 Löschen", key="del_btn_main", use_container_width=True):
-                st.session_state.show_delete_confirmation = True
+        # Always render button (avoids widget key lifecycle issues),
+        # but only enable it for saved patients
+        del_clicked = st.button("🗑 Löschen", key="del_btn_main",
+                                use_container_width=True,
+                                disabled=not is_saved_patient)
+        if del_clicked and is_saved_patient:
+            st.session_state.show_delete_confirmation = True
 
     delete_button = False  # legacy compat
 
@@ -1698,21 +1726,22 @@ def main():
         tp = st.session_state.therapieplan_data
         therapieplan_schedule_data = {}
 
-        def _row(label, cb_key, cb_val, slug, kp):
+        def _row(label, cb_key, cb_val, slug, kp, no_auto_date=False):
             cols = st.columns(ROW_COLS)
             with cols[0]:
                 checked = st.checkbox(label, value=cb_val, key=cb_key)
+            _tb = None if (no_auto_date and not tp.get(f"{kp}_{slug}_date_start")) else patient["therapiebeginn"]
             therapieplan_schedule_data.update(
-                _inline_timing(checked, slug, patient["therapiebeginn"], patient["dauer"], kp, tp, cols))
+                _inline_timing(checked, slug, _tb, patient["dauer"], kp, tp, cols))
             return checked
 
         # ---- SECTION 1: Diagnostik & Überprüfung ----
-        with st.expander("Diagnostik & Überprüfung", expanded=tp.get("_sec_diagnostik_open", True)):
+        with st.expander("Diagnostik", expanded=tp.get("_sec_diagnostik_open", True)):
             _sched_header()
             st.markdown('<div class="section-subheader">Zähne</div>', unsafe_allow_html=True)
             zaehne = _row(
                 "Überprüfung der Zähne/Kieferknochen mittels OPG (Panoramaaufnahme mit lachendem Gebiss) / DVT",
-                "zaehne_checkbox", tp.get("zaehne", False), "zaehne", "diag")
+                "zaehne_checkbox", tp.get("zaehne", False), "zaehne", "diag", no_auto_date=True)
             zaehne_zu_pruefen = ""
             if zaehne:
                 zaehne_zu_pruefen = st.text_input("Zähne zu überprüfen (OPG/DVT):",
@@ -1721,14 +1750,14 @@ def main():
             st.markdown('<div class="section-subheader">Bewegungsapparat & Schwermetalltest</div>', unsafe_allow_html=True)
             analyse_bewegungsapparat = _row("Analyse Bewegungsapparat (Martin)",
                 "analyse_bewegungsapparat_checkbox", tp.get("analyse_bewegungsapparat", False),
-                "analyse_bewegungsapparat", "diag")
+                "analyse_bewegungsapparat", "diag", no_auto_date=True)
             schwermetalltest_tp = _row("Schwermetalltest mit DMSA und Ca EDTA",
                 "schwermetalltest_tp_checkbox", tp.get("schwermetalltest_tp", False),
-                "schwermetalltest_tp", "diag")
+                "schwermetalltest_tp", "diag", no_auto_date=True)
 
             st.markdown('<div class="section-subheader">Labor & Diagnostik</div>', unsafe_allow_html=True)
 
-            def _text_timing(label, key_input, key_slug, kp):
+            def _text_timing(label, key_input, key_slug, kp, no_auto_date=False):
                 """Checkbox + text input on left (same row), timing on right."""
                 cb_key = key_input + "_cb"
                 cols = st.columns(ROW_COLS)
@@ -1738,17 +1767,17 @@ def main():
                     with r2: val = st.text_input("", value=tp.get(key_input, ""),
                         key=key_input + "_input", placeholder="Details...",
                         label_visibility="collapsed", disabled=not checked)
+                _tb = None if (no_auto_date and not tp.get(f"{kp}_{key_slug}_date_start")) else patient["therapiebeginn"]
                 therapieplan_schedule_data.update(
-                    _inline_timing(checked, key_slug, patient["therapiebeginn"], patient["dauer"], kp, tp, cols))
-                # save both checkbox and text value
+                    _inline_timing(checked, key_slug, _tb, patient["dauer"], kp, tp, cols))
                 tp[cb_key] = checked
                 return val if checked else ""
 
-            lab_imd       = _text_timing("IMD:",          "lab_imd",       "lab_imd",       "diag")
-            lab_mmd       = _text_timing("MMD:",          "lab_mmd",       "lab_mmd",       "diag")
-            lab_nextgen   = _text_timing("NextGen Onco:", "lab_nextgen",   "lab_nextgen",   "diag")
-            lab_sonstiges = _text_timing("Sonstiges:",    "lab_sonstiges", "lab_sonstiges", "diag")
-            _extra_rows("diag", "diag", tp, patient["therapiebeginn"], patient["dauer"], therapieplan_schedule_data)
+            lab_imd       = _text_timing("IMD:",          "lab_imd",       "lab_imd",       "diag", no_auto_date=True)
+            lab_mmd       = _text_timing("MMD:",          "lab_mmd",       "lab_mmd",       "diag", no_auto_date=True)
+            lab_nextgen   = _text_timing("NextGen Onco:", "lab_nextgen",   "lab_nextgen",   "diag", no_auto_date=True)
+            lab_sonstiges = _text_timing("Sonstiges:",    "lab_sonstiges", "lab_sonstiges", "diag", no_auto_date=True)
+            _extra_rows("diag", "diag", tp, patient["therapiebeginn"], patient["dauer"], therapieplan_schedule_data, no_auto_date=True)
 
         # ---- SECTION 2: Haupttherapien ----
         with st.expander("Haupttherapien", expanded=tp.get("_sec_haupttherapien_open", False)):
@@ -1868,6 +1897,54 @@ def main():
             ernaehrung, ernaehrung_comment = tight_row("Ernährungsberatung", "ernaehrung", "ernaehrung_comment",
                 tp.get("ernaehrung", False), tp.get("ernaehrung_comment", ""))
 
+            # Sub-items of Ernährungsberatung — indented, disabled when ernaehrung unchecked
+            def sub_ern_row(label, key_cb, key_input, cb_val, input_val):
+                cols = st.columns(ROW_COLS)
+                with cols[0]:
+                    sub_c1, sub_c2 = st.columns([0.06, 0.94])
+                    with sub_c2:
+                        r1, r2 = st.columns([2.0, 2.0])
+                        with r1: val = st.checkbox(label, value=cb_val and ernaehrung, key=key_cb, disabled=not ernaehrung)
+                        with r2: txt = st.text_input("", key=key_input, value=input_val,
+                                                      placeholder="Kommentar...", label_visibility="collapsed",
+                                                      disabled=not ernaehrung)
+                therapieplan_schedule_data.update(
+                    _inline_timing(val and ernaehrung, key_cb, patient["therapiebeginn"], patient["dauer"], "bio", tp, cols))
+                return val, txt
+
+            def sub_ern_text(label, key_cb, key_input, key_slug, cb_val, input_val):
+                cols = st.columns(ROW_COLS)
+                with cols[0]:
+                    sub_c1, sub_c2 = st.columns([0.06, 0.94])
+                    with sub_c2:
+                        r1, r2 = st.columns([2.0, 2.0])
+                        with r1: checked = st.checkbox(label, value=cb_val and ernaehrung, key=key_cb, disabled=not ernaehrung)
+                        with r2: val = st.text_input("", value=input_val,
+                            key=key_input + "_input", placeholder="Details...",
+                            label_visibility="collapsed", disabled=not ernaehrung)
+                therapieplan_schedule_data.update(
+                    _inline_timing(checked and ernaehrung, key_slug, patient["therapiebeginn"], patient["dauer"], "bio", tp, cols))
+                return checked, val
+
+            st.markdown('<div style="border-left:2px solid rgba(38,96,65,0.25);margin-left:10px;padding-left:6px;">', unsafe_allow_html=True)
+            lowcarb, lowcarb_comment = sub_ern_row("Low Carb Ernährung", "lowcarb", "lowcarb_comment",
+                tp.get("lowcarb", False), tp.get("lowcarb_comment", ""))
+            fasten, fasten_comment = sub_ern_row("Intermittierendes Fasten", "fasten", "fasten_comment",
+                tp.get("fasten", False), tp.get("fasten_comment", ""))
+            krebsdiaet, krebsdiaet_comment = sub_ern_row("Krebs Diät", "krebsdiaet", "krebsdiaet_comment",
+                tp.get("krebsdiaet", False), tp.get("krebsdiaet_comment", ""))
+            ketogene, ketogene_comment = sub_ern_row("Ketogene Ernährung", "ketogene", "ketogene_comment",
+                tp.get("ketogene", False), tp.get("ketogene_comment", ""))
+            basisch, basisch_comment = sub_ern_row("Basische Ernährung", "basisch", "basisch_comment",
+                tp.get("basisch", False), tp.get("basisch_comment", ""))
+            naehrstoff_ausgleich, naehrstoff_ausgleich_comment = sub_ern_text(
+                "Nährstoffmängel ausgleichen:", "naehrstoff_ausgleich_cb", "naehrstoff_ausgleich", "naehrstoff_ausgleich",
+                tp.get("naehrstoff_ausgleich_cb", False), tp.get("naehrstoff_ausgleich", ""))
+            therapie_sonstiges, therapie_sonstiges_comment = sub_ern_text(
+                "Sonstiges:", "therapie_sonstiges_cb", "therapie_sonstiges", "therapie_sonstiges",
+                tp.get("therapie_sonstiges_cb", False), tp.get("therapie_sonstiges", ""))
+            st.markdown('</div>', unsafe_allow_html=True)
+
             # Ästhetische Behandlung — inline timing + comment (2:2 split) + sub-checkboxes
             aet_cols = st.columns(ROW_COLS)
             with aet_cols[0]:
@@ -1878,7 +1955,6 @@ def main():
                     value=tp.get("aethetisch_comment", ""), placeholder="Kommentar...", label_visibility="collapsed")
             therapieplan_schedule_data.update(
                 _inline_timing(aethetisch, "aethetisch", patient["therapiebeginn"], patient["dauer"], "bio", tp, aet_cols))
-            # Behandlungsart always visible (not conditional on checkbox)
             st.markdown('<span style="font-size:13px;color:#555;">Behandlungsart:</span>', unsafe_allow_html=True)
             c1,c2,c3,c4 = st.columns(4)
             with c1: aethetisch_botox    = st.checkbox("Botox",   value=tp.get("aethetisch_botox", False),    key="aethetisch_botox_checkbox",    disabled=not aethetisch)
@@ -1886,68 +1962,11 @@ def main():
             with c3: aethetisch_faeden   = st.checkbox("Fäden",   value=tp.get("aethetisch_faeden", False),   key="aethetisch_faeden_checkbox",   disabled=not aethetisch)
             with c4: aethetisch_hyaloron = st.checkbox("Hyaloron",value=tp.get("aethetisch_hyaloron", False), key="aethetisch_hyaloron_checkbox", disabled=not aethetisch)
 
-            # Low Carb + all sub-checkboxes (including Nährstoffmängel + Sonstiges)
-            lowcarb, lowcarb_comment = tight_row("Low Carb Ernährung", "lowcarb", "lowcarb_comment",
-                tp.get("lowcarb", False), tp.get("lowcarb_comment", ""))
-
-            def sub_tight_row(label, key_cb, key_input, cb_val, input_val):
-                """Sub-checkbox of Low Carb — indented, disabled when Low Carb unchecked."""
-                cols = st.columns(ROW_COLS)
-                with cols[0]:
-                    sub_c1, sub_c2 = st.columns([0.06, 0.94])
-                    with sub_c2:
-                        r1, r2 = st.columns([2.0, 2.0])
-                        with r1: val = st.checkbox(label, value=cb_val, key=key_cb, disabled=not lowcarb)
-                        with r2: txt = st.text_input("", key=key_input, value=input_val,
-                                                      placeholder="Kommentar...", label_visibility="collapsed",
-                                                      disabled=not lowcarb)
-                therapieplan_schedule_data.update(
-                    _inline_timing(val and lowcarb, key_cb, patient["therapiebeginn"], patient["dauer"], "bio", tp, cols))
-                return val, txt
-
-            def sub_text_timing(label, key_cb, key_input, key_slug, cb_val, input_val):
-                """Checkbox + text-input sub-item of Low Carb — disabled when Low Carb unchecked."""
-                cols = st.columns(ROW_COLS)
-                with cols[0]:
-                    sub_c1, sub_c2 = st.columns([0.06, 0.94])
-                    with sub_c2:
-                        r1, r2 = st.columns([2.0, 2.0])
-                        with r1: checked = st.checkbox(label, value=cb_val, key=key_cb, disabled=not lowcarb)
-                        with r2: val = st.text_input("", value=input_val,
-                            key=key_input + "_input", placeholder="Kommentar...",
-                            label_visibility="collapsed", disabled=not lowcarb)
-                therapieplan_schedule_data.update(
-                    _inline_timing(checked and lowcarb, key_slug, patient["therapiebeginn"], patient["dauer"], "bio", tp, cols))
-                return checked, val
-
-            st.markdown('<div style="border-left:2px solid rgba(38,96,65,0.25);margin-left:10px;padding-left:6px;">', unsafe_allow_html=True)
-            fasten, fasten_comment = sub_tight_row("Intermittierendes Fasten", "fasten", "fasten_comment",
-                tp.get("fasten", False), tp.get("fasten_comment", ""))
-            krebsdiaet, krebsdiaet_comment = sub_tight_row("Krebs Diät", "krebsdiaet", "krebsdiaet_comment",
-                tp.get("krebsdiaet", False), tp.get("krebsdiaet_comment", ""))
-            ketogene, ketogene_comment = sub_tight_row("Ketogene Ernährung", "ketogene", "ketogene_comment",
-                tp.get("ketogene", False), tp.get("ketogene_comment", ""))
-            basisch, basisch_comment = sub_tight_row("Basische Ernährung", "basisch", "basisch_comment",
-                tp.get("basisch", False), tp.get("basisch_comment", ""))
-            naehrstoff_ausgleich, naehrstoff_ausgleich_comment = sub_text_timing(
-                "Nährstoffmängel ausgleichen:", "naehrstoff_ausgleich_cb", "naehrstoff_ausgleich", "naehrstoff_ausgleich",
-                tp.get("naehrstoff_ausgleich_cb", False), tp.get("naehrstoff_ausgleich", ""))
-            therapie_sonstiges, therapie_sonstiges_comment = sub_text_timing(
-                "Sonstiges:", "therapie_sonstiges_cb", "therapie_sonstiges", "therapie_sonstiges",
-                tp.get("therapie_sonstiges_cb", False), tp.get("therapie_sonstiges", ""))
-            st.markdown('</div>', unsafe_allow_html=True)
             _extra_rows("bio", "bio", tp, patient["therapiebeginn"], patient["dauer"], therapieplan_schedule_data)
 
-        # ---- SECTION 4: Gespräche ----
-        with st.expander("Gespräche", expanded=tp.get("_sec_gespraeche_open", False)):
-            _sched_header()
-            zwischengespraech_4 = _row("Zwischengespräch nach 4 Wochen (1/2h)",
-                "zwischengespraech_4_checkbox", tp.get("zwischengespraech_4", False),
-                "zwischengespraech_4", "gesp")
-            zwischengespraech_8 = _row("Zwischengespräch nach weiteren 8 Wochen (1/2h)",
-                "zwischengespraech_8_checkbox", tp.get("zwischengespraech_8", False),
-                "zwischengespraech_8", "gesp")
-            _extra_rows("gesp", "gesp", tp, patient["therapiebeginn"], patient["dauer"], therapieplan_schedule_data)
+        # Gespräche removed
+        zwischengespraech_4 = tp.get("zwischengespraech_4", False)
+        zwischengespraech_8 = tp.get("zwischengespraech_8", False)
 
         # Update session state
         new_tp = {
@@ -2183,153 +2202,161 @@ def main():
             return value
 
         def _procain_row(label, key_prefix, tooltip):
-            procain_key = f"inf_{key_prefix}_procain"
-            current_procain = inf.get(procain_key, "")
+            ml_key = f"{key_prefix}_ml"
             cols = st.columns(ROW_COLS)
             with cols[0]:
-                cb_cols = st.columns([0.07, 0.93])
+                cb_cols = st.columns([0.07, 0.6, 0.33])
                 with cb_cols[0]:
                     value = st.checkbox(" ", value=inf.get(key_prefix, False),
                         key=f"inf_{key_prefix}_cb", label_visibility="collapsed")
                 with cb_cols[1]:
                     st.markdown(
-                        f'<div style="display:flex;align-items:center;gap:6px;">' +
+                        f'<div style="display:flex;align-items:center;gap:4px;margin-top:8px;">' +
                         f'<span style="font-size:14px;white-space:nowrap;font-family:DM Sans,sans-serif;">{label}</span>' +
-                        f'<span class="info-icon" data-tooltip="{tooltip}">ⓘ</span>' +
-                        f'<input id="procain_input_{key_prefix}" type="text" placeholder="ml" value="{current_procain}"' +
-                        f' style="width:50px;padding:4px 8px;font-size:13px;border-radius:6px;border:1.5px solid #d4dae3;font-family:DM Sans,sans-serif;">' +
-                        f'</div>', unsafe_allow_html=True)
+                        f'<span class="info-icon" data-tooltip="{tooltip}">ⓘ</span></div>',
+                        unsafe_allow_html=True)
+                with cb_cols[2]:
+                    ml_val = st.text_input("ml", value=inf.get(ml_key, ""),
+                        key=ml_key, placeholder="ml",
+                        label_visibility="collapsed", disabled=not value)
             infusion_schedule_data.update(
                 _inline_timing(value, key_prefix, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
-            return value, current_procain
+            return value, ml_val
 
         st.markdown('<div class="green-section-header">Infusionstherapie</div>', unsafe_allow_html=True)
-        _sched_header()
 
-        st.markdown('<div class="section-subheader">RevitaClinic Infusionen</div>', unsafe_allow_html=True)
-        revita_immune        = _inf_row("RevitaImmune",        "revita_immune",        "Vitamin C, Zink, Selen, Magnesium, B-Vitamine")
-        revita_immune_plus   = _inf_row("RevitaImmunePlus",    "revita_immune_plus",   "Hochdosiert: Vitamin C, Zink, Selen, Magnesium, B-Vitamine, Glutathion")
-        revita_heal          = _inf_row("Revita Heal (2x)",    "revita_heal",          "Vitamin C, Zink, Arginin, Glutamin, B-Vitamine, Magnesium")
-        revita_bludder       = _inf_row("RevitaBludder",       "revita_bludder",       "Eisen, Vitamin B12, Folsäure, Vitamin C")
-        revita_ferro         = _inf_row("RevitaFerro",         "revita_ferro",         "Ferinject (Eisen), Vitamin C")
-        revita_energy        = _inf_row("RevitaEnergyBoost",   "revita_energy",        "Magnesium, B-Vitamine, Vitamin C, Coenzym Q10")
-        revita_focus         = _inf_row("RevitaFocus",         "revita_focus",         "Magnesium, B-Vitamine, Vitamin C, Zink, Alpha-Liponsäure")
-        revita_nad           = _inf_row("RevitaNAD+",          "revita_nad",           "NAD+ 500mg (oder 125mg), Magnesium, B-Vitamine")
-        revita_relax         = _inf_row("RevitaRelax",         "revita_relax",         "Magnesium, B-Vitamine, Vitamin C, Calcium")
-        revita_fit           = _inf_row("RevitaFit",           "revita_fit",           "Magnesium, B-Vitamine, Vitamin C, Aminosäuren, Coenzym Q10")
-        revita_hangover      = _inf_row("RevitaHangover",      "revita_hangover",      "Elektrolyte, Vitamin C, B-Vitamine, Magnesium, Glutathion")
-        revita_beauty        = _inf_row("RevitaBeauty",        "revita_beauty",        "Vitamin C, Biotin, Zink, Selen, B-Vitamine")
-        revita_antiaging     = _inf_row("RevitaAnti-Aging",    "revita_antiaging",     "Glutathion, Vitamin C, Alpha-Liponsäure, Selen, Zink")
-        revita_detox         = _inf_row("RevitaDetox",         "revita_detox",         "Glutathion, Vitamin C, Magnesium, B-Vitamine")
-        revita_chelate       = _inf_row("RevitaChelate",       "revita_chelate",       "EDTA, DMSA, Vitamin C, Magnesium, Zink")
-        revita_liver         = _inf_row("RevitaLiver",         "revita_liver",         "Glutathion, Vitamin C, B-Vitamine, Magnesium, Mariendistel-Extrakt")
-        revita_leakygut      = _inf_row("RevitaLeaky-gut",     "revita_leakygut",      "Glutamin, Zink, Vitamin C, B-Vitamine, Magnesium")
-        revita_infection     = _inf_row("RevitaInfection",     "revita_infection",     "Vitamin C, Zink, Selen, Magnesium, B-Vitamine, Glutathion")
-        revita_joint         = _inf_row("RevitaJoint",         "revita_joint",         "Vitamin C, Magnesium, Zink, Mangan, B-Vitamine")
+        with st.expander("RevitaClinic Infusionen", expanded=inf.get("_sec_revita_open", True)):
+            _sched_header()
+            revita_immune        = _inf_row("RevitaImmune",        "revita_immune",        "Vitamin C, Zink, Selen, Magnesium, B-Vitamine")
+            revita_immune_plus   = _inf_row("RevitaImmunePlus",    "revita_immune_plus",   "Hochdosiert: Vitamin C, Zink, Selen, Magnesium, B-Vitamine, Glutathion")
+            revita_heal          = _inf_row("Revita Heal (2x)",    "revita_heal",          "Vitamin C, Zink, Arginin, Glutamin, B-Vitamine, Magnesium")
+            revita_bludder       = _inf_row("RevitaBludder",       "revita_bludder",       "Eisen, Vitamin B12, Folsäure, Vitamin C")
+            revita_ferro         = _inf_row("RevitaFerro",         "revita_ferro",         "Ferinject (Eisen), Vitamin C")
+            revita_energy        = _inf_row("RevitaEnergyBoost",   "revita_energy",        "Magnesium, B-Vitamine, Vitamin C, Coenzym Q10")
+            revita_focus         = _inf_row("RevitaFocus",         "revita_focus",         "Magnesium, B-Vitamine, Vitamin C, Zink, Alpha-Liponsäure")
+            revita_nad           = _inf_row("RevitaNAD+",          "revita_nad",           "NAD+ 500mg (oder 125mg), Magnesium, B-Vitamine")
+            revita_relax         = _inf_row("RevitaRelax",         "revita_relax",         "Magnesium, B-Vitamine, Vitamin C, Calcium")
+            revita_fit           = _inf_row("RevitaFit",           "revita_fit",           "Magnesium, B-Vitamine, Vitamin C, Aminosäuren, Coenzym Q10")
+            revita_hangover      = _inf_row("RevitaHangover",      "revita_hangover",      "Elektrolyte, Vitamin C, B-Vitamine, Magnesium, Glutathion")
+            revita_beauty        = _inf_row("RevitaBeauty",        "revita_beauty",        "Vitamin C, Biotin, Zink, Selen, B-Vitamine")
+            revita_antiaging     = _inf_row("RevitaAnti-Aging",    "revita_antiaging",     "Glutathion, Vitamin C, Alpha-Liponsäure, Selen, Zink")
+            revita_detox         = _inf_row("RevitaDetox",         "revita_detox",         "Glutathion, Vitamin C, Magnesium, B-Vitamine")
+            revita_chelate       = _inf_row("RevitaChelate",       "revita_chelate",       "EDTA, DMSA, Vitamin C, Magnesium, Zink")
+            revita_liver         = _inf_row("RevitaLiver",         "revita_liver",         "Glutathion, Vitamin C, B-Vitamine, Magnesium, Mariendistel-Extrakt")
+            revita_leakygut      = _inf_row("RevitaLeaky-gut",     "revita_leakygut",      "Glutamin, Zink, Vitamin C, B-Vitamine, Magnesium")
+            revita_infection     = _inf_row("RevitaInfection",     "revita_infection",     "Vitamin C, Zink, Selen, Magnesium, B-Vitamine, Glutathion")
+            revita_joint         = _inf_row("RevitaJoint",         "revita_joint",         "Vitamin C, Magnesium, Zink, Mangan, B-Vitamine")
 
-        st.markdown("---")
-        st.markdown('<div class="section-subheader">Standard Infusionen</div>', unsafe_allow_html=True)
-        mito_energy      = _inf_row("Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)", "std_mito_energy",     "Mito-Energy Behandlung mit Wirkbooster")
-        oxyvenierung     = _inf_row("Oxyvenierung (10–40 ml, 10er Serie)",              "std_oxyvenierung",    "Oxyvenierung (10–40 ml, 10er Serie)")
-        schwermetalltest = _inf_row("Schwermetalltest mit DMSA und Ca EDTA",            "std_schwermetalltest","Test mit DMSA und Ca EDTA")
-        procain_basen, procain_2percent = _procain_row("Procain Baseninfusion mit Magnesium", "std_procain_basen","Procain Baseninfusion mit Magnesium")
-        artemisinin      = _inf_row("Artemisinin Infusion mit 2x Lysin",                "std_artemisinin",     "Artemisinin Infusion mit 2x Lysin")
-        perioperative    = _inf_row("Perioperative Infusion (3 Infusionen)",            "std_perioperative",   "Perioperative Infusion (3 Infusionen)")
-        detox_standard   = _inf_row("Detox-Infusion Standard",                          "std_detox_standard",  "Detox-Infusion Standard")
-        detox_maxi       = _inf_row("Detox-Infusion Maxi",                              "std_detox_maxi",      "Detox-Infusion Maxi")
-        aufbauinfusion   = _inf_row("Aufbauinfusion nach Detox",                        "std_aufbauinfusion",  "Aufbauinfusion nach Detox")
-        anti_aging       = _inf_row("Anti Aging Infusion komplett",                     "std_anti_aging",      "Anti Aging Infusion komplett")
-        nerven_aufbau    = _inf_row("Nerven Aufbau Infusion",                           "std_nerven_aufbau",   "Nerven Aufbau Infusion")
-        leberentgiftung  = _inf_row("Leberentgiftungsinfusion",                         "std_leberentgiftung", "Leberentgiftungsinfusion")
-        anti_oxidantien  = _inf_row("Anti-Oxidantien Infusion",                         "std_anti_oxidantien", "Anti-Oxidantien Infusion")
-        aminoinfusion    = _inf_row("Aminoinfusion leaky gut (5–10)",                   "std_aminoinfusion",   "Aminoinfusion leaky gut (5–10)")
-        relax_infusion   = _inf_row("Relax Infusion",                                   "std_relax_infusion",  "Relax Infusion")
+        with st.expander("Sonstiges", expanded=inf.get("_sec_sonstiges_open", False)):
+            _sched_header()
+            mito_energy      = _inf_row("Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)", "std_mito_energy",     "Mito-Energy Behandlung mit Wirkbooster")
+            oxyvenierung     = _inf_row("Oxyvenierung (10–40 ml, 10er Serie)",              "std_oxyvenierung",    "Oxyvenierung (10–40 ml, 10er Serie)")
 
-        st.markdown("---")
-        st.markdown('<div class="section-subheader">Weitere Angaben</div>', unsafe_allow_html=True)
+            # 2 additional free-text checkbox rows with timing
+            def _inf_custom_row(idx):
+                key_cb   = f"inf_custom{idx}_cb"
+                key_text = f"inf_custom{idx}_text"
+                key_slug = f"inf_custom{idx}"
+                cols = st.columns(ROW_COLS)
+                with cols[0]:
+                    cb_c, txt_c = st.columns([0.07, 0.93])
+                    with cb_c:
+                        checked = st.checkbox("", value=inf.get(key_cb, False),
+                            key=key_cb, label_visibility="collapsed")
+                    with txt_c:
+                        txt = st.text_input("", value=inf.get(key_text, ""),
+                            key=key_text, placeholder=f"Zusatz {idx}...",
+                            label_visibility="collapsed", disabled=not checked)
+                infusion_schedule_data.update(
+                    _inline_timing(checked, key_slug, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
+                return checked, txt
 
-        def _inf_text_timing(label, key_field, key_slug, widget_fn):
-            """Text/select/multiselect on left, timing on right."""
-            cols = st.columns(ROW_COLS)
-            with cols[0]:
-                val = widget_fn(label, key_field)
-            infusion_schedule_data.update(
-                _inline_timing(bool(val), key_slug, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
-            return val
+            inf_custom1_cb, inf_custom1_text = _inf_custom_row(1)
+            inf_custom2_cb, inf_custom2_text = _inf_custom_row(2)
 
-        def _ti(label, key_field): return st.text_input(label, value=inf.get(key_field,""), key=key_field+"_input")
-        def _ms_en(label, key_field): return st.multiselect(label, ["Vitamin B Shot","Q10 Boostershot"], default=inf.get(key_field,[]), key=key_field+"_select")
-        def _ms_ns(label, key_field): return st.multiselect(label, ["Glutathion","Alpha Liponsäure"], default=inf.get(key_field,[]), key=key_field+"_select")
-        def _sb(label, key_field):
-            opts = ["","Typ 1","Typ 2","Typ 3"]
-            return st.selectbox(label, opts, index=opts.index(inf.get(key_field,"")) if inf.get(key_field,"") in opts else 0, key=key_field+"_select")
+        with st.expander("Standard Infusionen", expanded=inf.get("_sec_standard_open", False)):
+            _sched_header()
+            schwermetalltest = _inf_row("Schwermetalltest mit DMSA und Ca EDTA",            "std_schwermetalltest","Test mit DMSA und Ca EDTA")
+            procain_basen, procain_2percent = _procain_row("Procain Baseninfusion mit Magnesium", "std_procain_basen","Procain Baseninfusion mit Magnesium")
+            artemisinin      = _inf_row("Artemisinin Infusion mit 2x Lysin",                "std_artemisinin",     "Artemisinin Infusion mit 2x Lysin")
+            perioperative    = _inf_row("Perioperative Infusion (3 Infusionen)",            "std_perioperative",   "Perioperative Infusion (3 Infusionen)")
+            detox_standard   = _inf_row("Detox-Infusion Standard",                          "std_detox_standard",  "Detox-Infusion Standard")
+            detox_maxi       = _inf_row("Detox-Infusion Maxi",                              "std_detox_maxi",      "Detox-Infusion Maxi")
+            aufbauinfusion   = _inf_row("Aufbauinfusion nach Detox",                        "std_aufbauinfusion",  "Aufbauinfusion nach Detox")
+            anti_aging       = _inf_row("Anti Aging Infusion komplett",                     "std_anti_aging",      "Anti Aging Infusion komplett")
+            nerven_aufbau    = _inf_row("Nerven Aufbau Infusion",                           "std_nerven_aufbau",   "Nerven Aufbau Infusion")
+            leberentgiftung  = _inf_row("Leberentgiftungsinfusion",                         "std_leberentgiftung", "Leberentgiftungsinfusion")
+            anti_oxidantien  = _inf_row("Anti-Oxidantien Infusion",                         "std_anti_oxidantien", "Anti-Oxidantien Infusion")
+            aminoinfusion    = _inf_row("Aminoinfusion leaky gut (5–10)",                   "std_aminoinfusion",   "Aminoinfusion leaky gut (5–10)")
+            relax_infusion   = _inf_row("Relax Infusion",                                   "std_relax_infusion",  "Relax Infusion")
 
-        # Weitere Angaben rows — label shown as markdown in col[0] (left-aligned,
-        # same height as timing widgets), widget shown below label in same col.
-        def _wa_row(label, cb_key, text_key, text_opts=None, is_select=False, is_multi=False):
-            """Checkbox on left + optional text/select widget, timing on right.
-            Checkbox controls whether item goes to PDF."""
-            cols = st.columns(ROW_COLS)
-            with cols[0]:
-                cb_c, wid_c = st.columns([2.0, 2.0])
-                with cb_c:
-                    checked = st.checkbox(label, value=inf.get(cb_key, False), key=cb_key)
-                with wid_c:
-                    if is_multi and text_opts:
-                        val = st.multiselect("", text_opts,
-                            default=inf.get(text_key, []),
-                            key=text_key + "_sel",
-                            label_visibility="collapsed",
-                            disabled=not checked)
-                    elif is_select and text_opts:
-                        val = st.selectbox("", text_opts,
-                            index=text_opts.index(inf.get(text_key, text_opts[0])) if inf.get(text_key, "") in text_opts else 0,
-                            key=text_key + "_sel",
-                            label_visibility="collapsed",
-                            disabled=not checked)
-                    else:
-                        val = st.text_input("", value=inf.get(text_key, ""),
-                            key=text_key + "_inp",
-                            placeholder="Details...",
-                            label_visibility="collapsed",
-                            disabled=not checked)
-            active = checked and (bool(val) if not isinstance(val, list) else len(val) > 0 or checked)
-            infusion_schedule_data.update(
-                _inline_timing(checked, text_key, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
-            return checked, val
+        with st.expander("Weitere Angaben", expanded=inf.get("_sec_weitere_open", False)):
+            _sched_header()
 
-        _if_cb, infektions_infusion = _wa_row(
-            "Infektions-Infusion / H2O2", "infektions_infusion_cb", "infektions_infusion")
-        _ib_cb, immun_booster = _wa_row(
-            "Immun-Boosterung Typ", "immun_booster_cb", "immun_booster",
-            text_opts=["","Typ 1","Typ 2","Typ 3"], is_select=True)
-        _en_cb, energetisierungsinfusion = _wa_row(
-            "Energetisierungsinfusion mit", "energetisierungsinfusion_cb", "energetisierungsinfusion",
-            text_opts=["Vitamin B Shot","Q10 Boostershot"], is_multi=True)
-        _ns_cb, naehrstoffinfusion = _wa_row(
-            "Nährstoffinfusion mit", "naehrstoffinfusion_cb", "naehrstoffinfusion",
-            text_opts=["Glutathion","Alpha Liponsäure"], is_multi=True)
-        _ei_cb, eisen_infusion = _wa_row(
-            "Eisen Infusion (Ferinject)", "eisen_infusion_cb", "eisen_infusion")
+            def _wa_row(label, cb_key, text_key, text_opts=None, is_select=False, is_multi=False):
+                """Checkbox + optional widget, timing on right. Checked = goes to PDF."""
+                cols = st.columns(ROW_COLS)
+                with cols[0]:
+                    cb_c, wid_c = st.columns([2.0, 2.0])
+                    with cb_c:
+                        checked = st.checkbox(label, value=inf.get(cb_key, False), key=cb_key)
+                    with wid_c:
+                        if is_multi and text_opts:
+                            val = st.multiselect("", text_opts,
+                                default=inf.get(text_key, []) if isinstance(inf.get(text_key,[]),list) else [],
+                                key=text_key + "_sel",
+                                label_visibility="collapsed",
+                                disabled=not checked)
+                        elif is_select and text_opts:
+                            val = st.selectbox("", text_opts,
+                                index=text_opts.index(inf.get(text_key, text_opts[0])) if inf.get(text_key, "") in text_opts else 0,
+                                key=text_key + "_sel",
+                                label_visibility="collapsed",
+                                disabled=not checked)
+                        else:
+                            val = st.text_input("", value=inf.get(text_key, ""),
+                                key=text_key + "_inp",
+                                placeholder="Details...",
+                                label_visibility="collapsed",
+                                disabled=not checked)
+                infusion_schedule_data.update(
+                    _inline_timing(checked, text_key, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
+                return checked, val
 
-        st.markdown("---")
-        st.markdown('<div class="section-subheader">Single Ingredients / Einzel</div>', unsafe_allow_html=True)
-        vitamin_c                = _inf_row("Hochdosis Vitamin C (g)",    "single_vitamin_c",               "Hochdosiertes Vitamin C")
-        vitamin_b_komplex        = _inf_row("Vit. B-Komplex",             "single_vitamin_b_komplex",       "Vitamin B-Komplex")
-        vitamin_d                = _inf_row("Vit. D",                     "single_vitamin_d",               "Vitamin D")
-        vitamin_b6_b12_folsaeure = _inf_row("Vit. B6/B12/Folsäure",      "single_vitamin_b6_b12_folsaeure","Vitamin B6, B12 und Folsäure")
-        vitamin_b3               = _inf_row("Vit. B3",                    "single_vitamin_b3",              "Vitamin B3")
+            _if_cb, infektions_infusion = _wa_row(
+                "Infektions-Infusion / H2O2", "infektions_infusion_cb", "infektions_infusion")
+            _ib_cb, immun_booster = _wa_row(
+                "Immun-Boosterung Typ", "immun_booster_cb", "immun_booster",
+                text_opts=["","Typ 1","Typ 2","Typ 3"], is_select=True)
+            _en_cb, energetisierungsinfusion = _wa_row(
+                "Energetisierungsinfusion mit", "energetisierungsinfusion_cb", "energetisierungsinfusion",
+                text_opts=["Vitamin B Shot","Q10 Boostershot"], is_multi=True)
+            _ns_cb, naehrstoffinfusion = _wa_row(
+                "Nährstoffinfusion mit", "naehrstoffinfusion_cb", "naehrstoffinfusion",
+                text_opts=["Glutathion","Alpha Liponsäure"], is_multi=True)
+            _ei_cb, eisen_infusion = _wa_row(
+                "Eisen Infusion (Ferinject)", "eisen_infusion_cb", "eisen_infusion")
 
-        st.markdown("---")
-        _extra_rows("inf", "inf", inf, patient["therapiebeginn"], patient["dauer"], infusion_schedule_data)
-        st.markdown('<div class="section-subheader">Zusätze</div>', unsafe_allow_html=True)
-        zusaetze = st.multiselect("Zusätze auswählen",
-            ["Vit.B Komplex","Vit.B6/B12/Folsäure","Vit.D 300 kIE","Vit.B3","Biotin","Glycin",
-             "Cholincitrat","Zink inject","Magnesium 400mg","TAD (red.Glut.)","Arginin","Glutamin",
-             "Taurin","Ornithin","Prolin/Lysin","Lysin","PC 1000mg","Oxyvenierung","Mito-Energy"],
-            default=inf.get("zusaetze",[]), key="zusaetze_select")
+
+        with st.expander("Single Ingredients / Einzel", expanded=inf.get("_sec_single_open", False)):
+            _sched_header()
+            vitamin_c                = _inf_row("Hochdosis Vitamin C (g)",    "single_vitamin_c",               "Hochdosiertes Vitamin C")
+            vitamin_b_komplex        = _inf_row("Vit. B-Komplex",             "single_vitamin_b_komplex",       "Vitamin B-Komplex")
+            vitamin_d                = _inf_row("Vit. D",                     "single_vitamin_d",               "Vitamin D")
+            vitamin_b6_b12_folsaeure = _inf_row("Vit. B6/B12/Folsäure",      "single_vitamin_b6_b12_folsaeure","Vitamin B6, B12 und Folsäure")
+            vitamin_b3               = _inf_row("Vit. B3",                    "single_vitamin_b3",              "Vitamin B3")
+
+        with st.expander("Zusätze & Extras", expanded=inf.get("_sec_zusaetze_open", False)):
+            _extra_rows("inf", "inf", inf, patient["therapiebeginn"], patient["dauer"], infusion_schedule_data)
+            zusaetze = st.multiselect("Zusätze auswählen",
+                ["Vit.B Komplex","Vit.B6/B12/Folsäure","Vit.D 300 kIE","Vit.B3","Biotin","Glycin",
+                 "Cholincitrat","Zink inject","Magnesium 400mg","TAD (red.Glut.)","Arginin","Glutamin",
+                 "Taurin","Ornithin","Prolin/Lysin","Lysin","PC 1000mg","Oxyvenierung","Mito-Energy"],
+                default=inf.get("zusaetze",[]), key="zusaetze_select")
 
         new_inf = {
+            "inf_custom1_cb": inf_custom1_cb, "inf_custom1_text": inf_custom1_text,
+            "inf_custom2_cb": inf_custom2_cb, "inf_custom2_text": inf_custom2_text,
             "infektions_infusion_cb": _if_cb, "immun_booster_cb": _ib_cb,
             "energetisierungsinfusion_cb": _en_cb, "naehrstoffinfusion_cb": _ns_cb,
             "eisen_infusion_cb": _ei_cb,
@@ -2345,7 +2372,7 @@ def main():
             "revita_joint": revita_joint,
             # std_* keys match the key_prefix used in _inf_row → timing stored correctly
             "std_mito_energy": mito_energy, "std_schwermetalltest": schwermetalltest,
-            "std_procain_basen": procain_basen, "procain_2percent": procain_2percent,
+            "std_procain_basen": procain_basen, "std_procain_basen_ml": procain_2percent,
             "std_artemisinin": artemisinin, "std_perioperative": perioperative,
             "std_detox_standard": detox_standard, "std_detox_maxi": detox_maxi,
             "std_aufbauinfusion": aufbauinfusion, "std_oxyvenierung": oxyvenierung,
