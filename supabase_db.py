@@ -280,6 +280,27 @@ class SupabaseDB:
             return None, [], {}, {}, {}
 
     # ──────────────────────────────────────────────────────────
+    # APP SETTINGS (key-value store for admin overrides)
+    # ──────────────────────────────────────────────────────────
+
+    def load_app_setting(self, key: str) -> str | None:
+        try:
+            resp = self.supabase.table('app_settings').select('value').eq('key', key).execute()
+            return resp.data[0]['value'] if resp.data else None
+        except Exception:
+            return None
+
+    def save_app_setting(self, key: str, value: str) -> bool:
+        try:
+            self.supabase.table('app_settings').upsert(
+                {'key': key, 'value': value}, on_conflict='key'
+            ).execute()
+            return True
+        except Exception as e:
+            print(f"save_app_setting error: {e}")
+            return False
+
+    # ──────────────────────────────────────────────────────────
     # DELETE
     # ──────────────────────────────────────────────────────────
 

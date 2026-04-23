@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from PIL import Image
 import base64
 from supabase_db import SupabaseDB
+from auth import login_page, check_auth, logout, admin_panel
 
 
 st.set_page_config("THERAPIEKONZEPT", layout="wide")
@@ -213,6 +214,18 @@ div[data-testid="stHorizontalBlock"] button { margin: 3px !important; padding: 7
 }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ── Authentication wall ────────────────────────────────────────────────────
+_current_user = login_page(db)
+
+with st.sidebar:
+    role_label = "Administrator" if _current_user["role"] == "admin" else "Arzt"
+    st.markdown(f"**{_current_user['name']}**")
+    st.caption(role_label)
+    st.divider()
+    if st.button("🚪 Abmelden", use_container_width=True):
+        logout()
 
 
 # =========================================================
@@ -1719,7 +1732,12 @@ def main():
                 st.rerun()
 
     st.markdown("---")
-    tabs = st.tabs(["Therapieplan", "Nahrungsergänzungsmittel (NEM)", "Infusionstherapie"])
+    _auth_user = check_auth()
+    _is_admin = bool(_auth_user and _auth_user.get("role") == "admin")
+    _tab_labels = ["Therapieplan", "Nahrungsergänzungsmittel (NEM)", "Infusionstherapie"]
+    if _is_admin:
+        _tab_labels.append("⚙️ Benutzerverwaltung")
+    tabs = st.tabs(_tab_labels)
 
     # =========================================================
     # TAB 0: THERAPIEPLAN
@@ -2513,6 +2531,10 @@ def main():
                 st.rerun()
             else:
                 st.error("❌ Fehler beim Speichern! Konsole prüfen.")
+
+    if _is_admin:
+        with tabs[3]:
+            admin_panel(db)
 
     # Auto-download PDF
     if st.session_state.get("auto_download_pdf"):
