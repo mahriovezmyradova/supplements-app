@@ -212,6 +212,25 @@ div[data-testid="stHorizontalBlock"] button { margin: 3px !important; padding: 7
     border-top: 1px solid rgba(38,96,65,0.1);
     margin: 8px 0 4px 0;
 }
+.nem-cat-toggle button {
+    background: rgba(38,96,65,0.06) !important;
+    border: 1px solid rgba(38,96,65,0.2) !important;
+    border-radius: 6px !important;
+    color: rgb(38,96,65) !important;
+    font-weight: 600 !important;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    margin: 2px 0 !important;
+}
+.nem-cat-toggle button:hover {
+    background: rgba(38,96,65,0.14) !important;
+    border-color: rgba(38,96,65,0.4) !important;
+}
+.nem-cat-open {
+    border-left: 3px solid rgba(38,96,65,0.35);
+    padding-left: 10px;
+    margin: 0 0 10px 0;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1741,11 +1760,9 @@ def main():
 
     # =========================================================
     # TAB 0: THERAPIEPLAN
-    # Left side: exact Doc3 content unchanged.
-    # Each checkbox row wrapped in st.columns(ROW_COLS) so timing
-    # inputs appear inline on the same row — no separate right panel.
     # =========================================================
-    with tabs[0]:
+    @st.fragment
+    def _therapieplan_tab():
         tp = st.session_state.therapieplan_data
         therapieplan_schedule_data = {}
 
@@ -2036,12 +2053,16 @@ def main():
                 "filename": f"RevitaClinic_Therapieplan_{patient.get('patient','')}.pdf",
                 "mime": "application/pdf"
             }
-            st.rerun()
+            st.rerun(scope="app")
+
+    with tabs[0]:
+        _therapieplan_tab()
 
     # =========================================================
     # TAB 1: NEM
     # =========================================================
-    with tabs[1]:
+    @st.fragment
+    def _nem_tab():
         nem_container = st.container()
         with nem_container:
             if 'nem_form_initialized' not in st.session_state:
@@ -2091,7 +2112,16 @@ def main():
                     if category_name not in st.session_state.category_states:
                         st.session_state.category_states[category_name] = False
 
-                    with st.expander(f" {category_name}", expanded=st.session_state.category_states[category_name]):
+                    is_open = st.session_state.category_states.get(category_name, False)
+                    icon = "▼" if is_open else "▶"
+                    st.markdown('<div class="nem-cat-toggle">', unsafe_allow_html=True)
+                    if st.button(f"{icon}  {category_name}", key=f"cat_toggle_{category_name}", use_container_width=True):
+                        st.session_state.category_states[category_name] = not is_open
+                        st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                    if is_open:
+                        st.markdown('<div class="nem-cat-open">', unsafe_allow_html=True)
                         for row in supplement_rows:
                             cols = st.columns([2.2, 0.9, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
                             supplement_name = row["name"]
@@ -2167,24 +2197,33 @@ def main():
                                 "Nüchtern": nue_val, "Morgens": morg_val, "Mittags": mitt_val,
                                 "Abends": abend_val, "Nachts": nacht_val, "Kommentar": comment
                             })
-
-            # Update nem_prescriptions every render (no form boundary)
-            st.session_state.nem_prescriptions = all_supplements_data
+                        st.markdown('</div>', unsafe_allow_html=True)
 
             if st.button("NEM PDF generieren", key="nem_pdf_button"):
-                pdf_submitted = True
-            else:
-                pdf_submitted = False
-
-            if pdf_submitted:
-                pass  # nem_prescriptions already updated above
-                pdf_data = [p for p in all_supplements_data if (
-                    any(p.get(f,"").strip() for f in ["Nüchtern","Morgens","Mittags","Abends","Nachts"])
-                    or p.get("Gesamt-dosierung","").strip()
-                    or p.get("Pro Einnahme","").strip()
-                    or p.get("Kommentar","").strip()
-                    or (p.get("Darreichungsform","") != DEFAULT_FORMS.get(p["name"],"Kapseln") and p.get("Darreichungsform","").strip())
-                )]
+                # Build PDF data from session state keys so closed categories are included
+                pdf_data = []
+                for _, df_row in df.iterrows():
+                    if df_row["id"].startswith("CAT"): continue
+                    rid = df_row["id"]
+                    name = df_row["name"]
+                    p = {
+                        "name": name,
+                        "Gesamt-dosierung":  str(st.session_state.get(f"{rid}_gesamt_dosierung", "") or ""),
+                        "Darreichungsform":  str(st.session_state.get(f"{rid}_darreichungsform", DEFAULT_FORMS.get(name, "Kapseln")) or ""),
+                        "Pro Einnahme":      str(st.session_state.get(f"{rid}_pro_Einnahme", "") or ""),
+                        "Nüchtern":          str(st.session_state.get(f"{rid}_Nuechtern", "") or ""),
+                        "Morgens":           str(st.session_state.get(f"{rid}_Morgens", "") or ""),
+                        "Mittags":           str(st.session_state.get(f"{rid}_Mittags", "") or ""),
+                        "Abends":            str(st.session_state.get(f"{rid}_Abends", "") or ""),
+                        "Nachts":            str(st.session_state.get(f"{rid}_Nachts", "") or ""),
+                        "Kommentar":         str(st.session_state.get(f"{rid}_comment", "") or ""),
+                    }
+                    if (any(p[f].strip() for f in ["Nüchtern","Morgens","Mittags","Abends","Nachts"])
+                            or p["Gesamt-dosierung"].strip()
+                            or p["Pro Einnahme"].strip()
+                            or p["Kommentar"].strip()
+                            or (p["Darreichungsform"] != DEFAULT_FORMS.get(name,"Kapseln") and p["Darreichungsform"].strip())):
+                        pdf_data.append(p)
                 if pdf_data:
                     pdf_bytes = generate_pdf(patient, pdf_data, "NEM")
                     st.session_state.auto_download_pdf = {
@@ -2193,16 +2232,18 @@ def main():
                         "mime": "application/pdf"
                     }
                     st.success(f"✅ PDF mit {len(pdf_data)} NEM-Supplement(en) generiert!")
-                    st.rerun()
+                    st.rerun(scope="app")
                 else:
                     st.warning("⚠️ Keine NEM-Supplemente ausgewählt.")
 
+    with tabs[1]:
+        _nem_tab()
+
     # =========================================================
     # TAB 2: INFUSIONSTHERAPIE
-    # Left side content 100% unchanged. Each checkbox row now uses
-    # ROW_COLS so timing appears inline (no separate right panel).
     # =========================================================
-    with tabs[2]:
+    @st.fragment
+    def _infusion_tab():
         infusion_schedule_data = {}
         inf = st.session_state.infusion_data
 
@@ -2433,8 +2474,10 @@ def main():
                 "filename": f"RevitaClinic_Infusionstherapie_{patient.get('patient','')}.pdf",
                 "mime": "application/pdf"
             }
-            st.rerun()
+            st.rerun(scope="app")
 
+    with tabs[2]:
+        _infusion_tab()
 
     # =========================================================
     # SAVE HANDLER
