@@ -212,25 +212,6 @@ div[data-testid="stHorizontalBlock"] button { margin: 3px !important; padding: 7
     border-top: 1px solid rgba(38,96,65,0.1);
     margin: 8px 0 4px 0;
 }
-.nem-cat-toggle button {
-    background: rgba(38,96,65,0.06) !important;
-    border: 1px solid rgba(38,96,65,0.2) !important;
-    border-radius: 6px !important;
-    color: rgb(38,96,65) !important;
-    font-weight: 600 !important;
-    text-align: left !important;
-    justify-content: flex-start !important;
-    margin: 2px 0 !important;
-}
-.nem-cat-toggle button:hover {
-    background: rgba(38,96,65,0.14) !important;
-    border-color: rgba(38,96,65,0.4) !important;
-}
-.nem-cat-open {
-    border-left: 3px solid rgba(38,96,65,0.35);
-    padding-left: 10px;
-    margin: 0 0 10px 0;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2067,8 +2048,6 @@ def main():
         with nem_container:
             if 'nem_form_initialized' not in st.session_state:
                 st.session_state.nem_form_initialized = True
-            if 'category_states' not in st.session_state:
-                st.session_state.category_states = {}
 
             # No st.form wrapper — widgets update immediately, enabling
             # save-on-demand without requiring form submission first.
@@ -2109,19 +2088,8 @@ def main():
 
                 for category_name, supplement_rows in categories.items():
                     if not supplement_rows: continue
-                    if category_name not in st.session_state.category_states:
-                        st.session_state.category_states[category_name] = False
 
-                    is_open = st.session_state.category_states.get(category_name, False)
-                    icon = "▼" if is_open else "▶"
-                    st.markdown('<div class="nem-cat-toggle">', unsafe_allow_html=True)
-                    if st.button(f"{icon}  {category_name}", key=f"cat_toggle_{category_name}", use_container_width=True):
-                        st.session_state.category_states[category_name] = not is_open
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                    if is_open:
-                        st.markdown('<div class="nem-cat-open">', unsafe_allow_html=True)
+                    with st.expander(category_name, expanded=False):
                         for row in supplement_rows:
                             cols = st.columns([2.2, 0.9, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
                             supplement_name = row["name"]
@@ -2197,7 +2165,6 @@ def main():
                                 "Nüchtern": nue_val, "Morgens": morg_val, "Mittags": mitt_val,
                                 "Abends": abend_val, "Nachts": nacht_val, "Kommentar": comment
                             })
-                        st.markdown('</div>', unsafe_allow_html=True)
 
             if st.button("NEM PDF generieren", key="nem_pdf_button"):
                 # Build PDF data from session state keys so closed categories are included
