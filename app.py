@@ -4,7 +4,6 @@ import streamlit as st
 from fpdf import FPDF
 from datetime import date, timedelta
 from PIL import Image
-import time
 import base64
 from supabase_db import SupabaseDB
 
@@ -18,17 +17,25 @@ def get_db():
 
 db = get_db()
 
+@st.cache_data(ttl=3600)
 def fetch_supplements():
     return db.fetch_supplements()
 
+@st.cache_data(ttl=120)
 def fetch_patient_names():
     return db.fetch_patient_names()
 
 def save_patient_data(patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data):
-    return db.save_patient_data(patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data)
+    result = db.save_patient_data(patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data)
+    if result:
+        fetch_patient_names.clear()
+    return result
 
 def delete_patient_data(patient_name):
-    return db.delete_patient_data(patient_name)
+    result = db.delete_patient_data(patient_name)
+    if result:
+        fetch_patient_names.clear()
+    return result
 
 def load_patient_data(patient_name):
     return db.load_patient_data(patient_name)
@@ -1689,10 +1696,8 @@ def main():
     delete_button = False  # legacy compat
 
     if st.session_state.get("show_save_success", False):
-        st.markdown('<div class="success-message">✅ Alle Daten wurden erfolgreich gespeichert!</div>', unsafe_allow_html=True)
-        time.sleep(3)
         st.session_state.show_save_success = False
-        st.rerun()
+        st.toast("✅ Alle Daten wurden erfolgreich gespeichert!")
 
     if st.session_state.get("show_delete_confirmation", False):
         st.markdown("---")

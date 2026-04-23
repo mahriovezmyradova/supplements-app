@@ -157,26 +157,31 @@ class SupabaseDB:
             # ── 2. NEM prescriptions ─────────────────────────
             self.supabase.table('patient_prescriptions').delete().eq('patient_id', patient_id).execute()
 
-            for prescription in (nem_prescriptions or []):
-                supp_resp = self.supabase.table('supplements') \
-                    .select('id') \
-                    .eq('name', prescription.get('name', '')) \
-                    .execute()
-                if not supp_resp.data:
-                    continue
-                self.supabase.table('patient_prescriptions').insert({
-                    'patient_id':      patient_id,
-                    'supplement_id':   supp_resp.data[0]['id'],
-                    'dauer':           self._to_str(prescription.get('Gesamt-dosierung', '')),
-                    'darreichungsform': self._to_str(prescription.get('Darreichungsform', '')),
-                    'dosierung':       self._to_str(prescription.get('Pro Einnahme', '')),
-                    'nuechtern':       self._to_str(prescription.get('Nüchtern', '')),
-                    'morgens':         self._to_str(prescription.get('Morgens', '')),
-                    'mittags':         self._to_str(prescription.get('Mittags', '')),
-                    'abends':          self._to_str(prescription.get('Abends', '')),
-                    'nachts':          self._to_str(prescription.get('Nachts', '')),
-                    'kommentar':       self._to_str(prescription.get('Kommentar', '')),
-                }).execute()
+            if nem_prescriptions:
+                names = [p.get('name', '') for p in nem_prescriptions if p.get('name')]
+                supp_resp = self.supabase.table('supplements').select('id, name').in_('name', names).execute()
+                name_to_id = {row['name']: row['id'] for row in (supp_resp.data or [])}
+
+                records = []
+                for prescription in nem_prescriptions:
+                    sup_id = name_to_id.get(prescription.get('name', ''))
+                    if not sup_id:
+                        continue
+                    records.append({
+                        'patient_id':       patient_id,
+                        'supplement_id':    sup_id,
+                        'dauer':            self._to_str(prescription.get('Gesamt-dosierung', '')),
+                        'darreichungsform': self._to_str(prescription.get('Darreichungsform', '')),
+                        'dosierung':        self._to_str(prescription.get('Pro Einnahme', '')),
+                        'nuechtern':        self._to_str(prescription.get('Nüchtern', '')),
+                        'morgens':          self._to_str(prescription.get('Morgens', '')),
+                        'mittags':          self._to_str(prescription.get('Mittags', '')),
+                        'abends':           self._to_str(prescription.get('Abends', '')),
+                        'nachts':           self._to_str(prescription.get('Nachts', '')),
+                        'kommentar':        self._to_str(prescription.get('Kommentar', '')),
+                    })
+                if records:
+                    self.supabase.table('patient_prescriptions').insert(records).execute()
 
             # ── 3. JSON blobs ────────────────────────────────
             for table, data in [
