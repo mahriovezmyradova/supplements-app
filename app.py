@@ -428,8 +428,10 @@ def _parse_saved_date(val, fallback):
 
 # =========================================================
 # INLINE TIMING HELPERS
-# Column layout: [left_content | Wo von | Wo bis | Häufigkeit | Von | Bis]
-ROW_COLS = [3.0, 0.55, 0.55, 0.9, 1.0, 1.0]
+# Column layout: [label | 4W | 12W | Wo.Start | Wo.Ende | Häufigkeit | Von | Bis]
+ROW_COLS = [2.5, 0.3, 0.3, 0.55, 0.55, 0.9, 1.0, 1.0]
+# Diagnostik section uses a different layout: [label | Zeitpunkt | Kommentar]
+DIAG_COLS = [3.5, 2.0, 2.5]
 
 
 def _sched_header():
@@ -439,11 +441,24 @@ def _sched_header():
          "border-bottom:2px solid rgba(38,96,65,.2);white-space:nowrap;'>{}</div>")
     h = st.columns(ROW_COLS)
     h[0].markdown(H.format("&nbsp;"),         unsafe_allow_html=True)
-    h[1].markdown(H.format("Wo.&nbsp;Start"), unsafe_allow_html=True)
-    h[2].markdown(H.format("Wo.&nbsp;Ende"),  unsafe_allow_html=True)
-    h[3].markdown(H.format("Häufigkeit"),     unsafe_allow_html=True)
-    h[4].markdown(H.format("Von&nbsp;Datum"), unsafe_allow_html=True)
-    h[5].markdown(H.format("Bis&nbsp;Datum"), unsafe_allow_html=True)
+    h[1].markdown(H.format("4W"),             unsafe_allow_html=True)
+    h[2].markdown(H.format("12W"),            unsafe_allow_html=True)
+    h[3].markdown(H.format("Wo.&nbsp;Start"), unsafe_allow_html=True)
+    h[4].markdown(H.format("Wo.&nbsp;Ende"),  unsafe_allow_html=True)
+    h[5].markdown(H.format("Häufigkeit"),     unsafe_allow_html=True)
+    h[6].markdown(H.format("Von&nbsp;Datum"), unsafe_allow_html=True)
+    h[7].markdown(H.format("Bis&nbsp;Datum"), unsafe_allow_html=True)
+
+
+def _diag_header():
+    """Header for Diagnostik section — urgency + comment only."""
+    H = ("<div style='font-size:11px;font-weight:700;color:rgb(38,96,65);"
+         "text-transform:uppercase;letter-spacing:.5px;padding:4px 2px 3px 2px;"
+         "border-bottom:2px solid rgba(38,96,65,.2);white-space:nowrap;'>{}</div>")
+    h = st.columns(DIAG_COLS)
+    h[0].markdown(H.format("&nbsp;"),    unsafe_allow_html=True)
+    h[1].markdown(H.format("Zeitpunkt"), unsafe_allow_html=True)
+    h[2].markdown(H.format("Kommentar"), unsafe_allow_html=True)
 
 
 def _extra_rows(section_key, kp, data_store, therapiebeginn, dauer, schedule_dict, no_auto_date=False):
@@ -469,15 +484,14 @@ def _extra_rows(section_key, kp, data_store, therapiebeginn, dauer, schedule_dic
 
 def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, data_store, cols):
     """
-    Renders timing inputs into cols[1..5].
-    Wo von / Wo bis = dropdowns bounded by dauer_monate.
-    Von/Bis Datum always auto-calculated from therapiebeginn + chosen week.
+    Renders timing inputs into cols[1..7].
+    cols[1]=4W btn, cols[2]=12W btn, cols[3]=Wo.Start, cols[4]=Wo.Ende,
+    cols[5]=Häufigkeit, cols[6]=Von Datum, cols[7]=Bis Datum.
+    Wo.Start and Wo.Ende default to "0" (not filled).
     Returns dict to merge into schedule_data.
     """
     total_weeks  = max(1, int(dauer_monate) * 4)
     freq_options = ["", "1x/Woche", "2x/Woche", "3x/Woche", "4x/Woche", "5x/Woche", "täglich"]
-    # Parse therapiebeginn — use the passed argument (already the widget value
-    # from patient_inputs return dict), fall back to today only if truly missing.
     import datetime as _dt
     def _coerce_date(v):
         if isinstance(v, _dt.datetime): return v.date()
@@ -487,7 +501,7 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
                 try: return _dt.datetime.strptime(v, fmt).date()
                 except: pass
         return None
-    tb = _coerce_date(therapiebeginn)  # None = no auto-date
+    tb = _coerce_date(therapiebeginn)
 
     w_start_key = f"{key_prefix}_{slug}_w_start"
     w_end_key   = f"{key_prefix}_{slug}_w_end"
@@ -495,51 +509,65 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
     de_key      = f"{key_prefix}_{slug}_date_end"
     freq_key    = f"{key_prefix}_{slug}_freq"
 
-    week_opts = [str(w) for w in range(1, total_weeks + 1)]
+    # "0" = not filled (default); weeks 1..total follow
+    week_opts = ["0"] + [str(w) for w in range(1, total_weeks + 1)]
 
-    saved_ws = str(data_store.get(w_start_key, 1))
-    if saved_ws not in week_opts: saved_ws = "1"
-    saved_we = str(data_store.get(w_end_key, saved_ws))
-    if saved_we not in week_opts: saved_we = saved_ws
+    saved_ws = str(data_store.get(w_start_key, "0"))
+    if saved_ws not in week_opts: saved_ws = "0"
+    saved_we = str(data_store.get(w_end_key, "0"))
+    if saved_we not in week_opts: saved_we = "0"
     saved_freq = data_store.get(freq_key, "")
     if saved_freq not in freq_options: saved_freq = ""
 
-    # Wo von dropdown
+    # Shortcut buttons: 4W sets Wo.Start=1, Wo.Ende=4; 12W sets Wo.Start=1, Wo.Ende=12
+    with cols[1]:
+        if st.button("4W", key=f"q4_{key_prefix}_{slug}",
+                     disabled=not is_checked, use_container_width=True):
+            st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
+            st.session_state[f"we_{key_prefix}_{slug}"] = str(min(4, total_weeks))
+    with cols[2]:
+        if st.button("12W", key=f"q12_{key_prefix}_{slug}",
+                     disabled=not is_checked, use_container_width=True):
+            st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
+            st.session_state[f"we_{key_prefix}_{slug}"] = str(min(12, total_weeks))
+
+    # Wo.Start dropdown in cols[3]
     ws_idx = week_opts.index(saved_ws)
-    w_start_sel = cols[1].selectbox("", week_opts, index=ws_idx,
+    w_start_sel = cols[3].selectbox("", week_opts, index=ws_idx,
         key=f"ws_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
 
-    # Wo bis dropdown — options filtered so min = w_start
-    w_start_int = int(w_start_sel)
-    we_opts = [str(w) for w in range(w_start_int, total_weeks + 1)]
-    if saved_we not in we_opts: saved_we = w_start_sel
+    # Wo.Ende dropdown in cols[4] — options ≥ w_start
+    w_start_int = int(w_start_sel) if w_start_sel != "0" else 0
+    if w_start_int == 0:
+        we_opts = week_opts[:]
+    else:
+        we_opts = [str(w) for w in range(w_start_int, total_weeks + 1)]
+    if saved_we not in we_opts: saved_we = we_opts[0]
     we_idx = we_opts.index(saved_we)
-    w_end_sel = cols[2].selectbox("", we_opts, index=we_idx,
+    w_end_sel = cols[4].selectbox("", we_opts, index=we_idx,
         key=f"we_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
 
     fi   = freq_options.index(saved_freq) if saved_freq in freq_options else 0
-    freq = cols[3].selectbox("", freq_options, index=fi,
+    freq = cols[5].selectbox("", freq_options, index=fi,
         key=f"fr_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
 
-    w_start_int = int(w_start_sel)
-    w_end_int   = int(w_end_sel)
-    if tb is not None:
+    w_end_int = int(w_end_sel) if w_end_sel != "0" else 0
+
+    if tb is not None and w_start_int > 0 and w_end_int > 0:
         auto_ds = tb + timedelta(weeks=w_start_int - 1)
         auto_de = tb + timedelta(weeks=w_end_int) - timedelta(days=1)
-        date_start = cols[4].date_input("", value=auto_ds, format="DD.MM.YYYY",
+        date_start = cols[6].date_input("", value=auto_ds, format="DD.MM.YYYY",
             key=f"ds_{key_prefix}_{slug}_{auto_ds.isoformat()}", disabled=not is_checked, label_visibility="collapsed")
-        date_end   = cols[5].date_input("", value=auto_de, format="DD.MM.YYYY",
+        date_end   = cols[7].date_input("", value=auto_de, format="DD.MM.YYYY",
             key=f"de_{key_prefix}_{slug}_{auto_de.isoformat()}", disabled=not is_checked, label_visibility="collapsed")
     else:
-        # No auto-date: empty calendar, patient picks manually
+        # Week not set or no therapiebeginn — show empty date pickers
         _ds_saved = _coerce_date(data_store.get(ds_key)) if data_store.get(ds_key) else None
         _de_saved = _coerce_date(data_store.get(de_key)) if data_store.get(de_key) else None
-        date_start = cols[4].date_input("", value=_ds_saved, format="DD.MM.YYYY",
+        date_start = cols[6].date_input("", value=_ds_saved, format="DD.MM.YYYY",
             key=f"ds_{key_prefix}_{slug}_free", disabled=not is_checked, label_visibility="collapsed")
-        date_end   = cols[5].date_input("", value=_de_saved, format="DD.MM.YYYY",
+        date_end   = cols[7].date_input("", value=_de_saved, format="DD.MM.YYYY",
             key=f"de_{key_prefix}_{slug}_free", disabled=not is_checked, label_visibility="collapsed")
-        auto_ds = date_start or _dt.date.today()
-        auto_de = date_end   or _dt.date.today()
 
     return {
         w_start_key: w_start_sel, w_end_key: w_end_sel,
@@ -670,9 +698,10 @@ def _fmt_dt(d):
 # PDF
 # =========================================================
 class PDF(FPDF):
-    def __init__(self, *args, tab_title="THERAPIEKONZEPT", **kwargs):
+    def __init__(self, *args, tab_title="THERAPIEKONZEPT", patient_name="", **kwargs):
         super().__init__(*args, **kwargs)
         self._tab_title = tab_title
+        self._patient_name = patient_name
 
     def header(self):
         if os.path.exists("clinic_logo.png"):
@@ -690,6 +719,16 @@ class PDF(FPDF):
             0, "R")
         self.ln(12)
 
+    def footer(self):
+        if self.page_no() == 1:
+            return
+        self.set_y(-12)
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(140, 140, 140)
+        name_part = f"  –  {self._patient_name}" if self._patient_name else ""
+        self.cell(0, 5, f"{self._tab_title}{name_part}  |  Seite {self.page_no()} von {{nb}}", 0, 0, "C")
+        self.set_text_color(0, 0, 0)
+
 
 def generate_pdf(patient, supplements, tab_name="NEM"):
     title_map = {
@@ -697,7 +736,11 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         "THERAPIEPLAN": "THERAPIEKONZEPT - THERAPIEPLAN",
         "INFUSIONSTHERAPIE": "THERAPIEKONZEPT - INFUSIONSTHERAPIE",
     }
-    pdf = PDF("L", "mm", "A4", tab_title=title_map.get(tab_name, f"THERAPIEKONZEPT - {tab_name}"))
+    patient_name = patient.get("patient", "") if patient else ""
+    pdf = PDF("L", "mm", "A4",
+              tab_title=title_map.get(tab_name, f"THERAPIEKONZEPT - {tab_name}"),
+              patient_name=patient_name)
+    pdf.alias_nb_pages()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
 
@@ -1046,105 +1089,106 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             rows.append((clean_text(lbl), clean_text(comment),
                          ws, we, ds, de, fr))
 
-        # ── THERAPIEPLAN items ──
-        # Section 1: Diagnostik
-        for key, lbl in [
-            ("zaehne",                "Ueberpr. Zaehne/Kieferknochen (OPG/DVT)"),
-            ("analyse_bewegungsapparat","Analyse Bewegungsapparat (Martin)"),
-            ("schwermetalltest_tp",   "Schwermetalltest DMSA/Ca EDTA"),
-        ]:
-            if _prescribed(key):
-                comment = supplements.get("zaehne_zu_pruefen","") if key=="zaehne" else ""
-                _add_row(lbl, key, "diag", None)
-                if comment: rows[-1] = rows[-1][:1] + (clean_text(comment),) + rows[-1][2:]
+        # ── Diagnostik items (THERAPIEPLAN only) — urgency + comment, no weeks ──
+        diag_rows = []  # [(label, urgency_text, comment)]
+        if tab_name == "THERAPIEPLAN":
+            for key, lbl in [
+                ("zaehne",                   "Ueberpruefung Zaehne/Kieferknochen (OPG/DVT)"),
+                ("analyse_bewegungsapparat", "Analyse Bewegungsapparat (Martin)"),
+                ("schwermetalltest_tp",      "Schwermetalltest DMSA/Ca EDTA"),
+            ]:
+                if _prescribed(key):
+                    urg = clean_text(supplements.get(f"{key}_urgency", ""))
+                    cmt = clean_text(supplements.get(f"{key}_urgency_comment", ""))
+                    if key == "zaehne":
+                        zu = clean_text(supplements.get("zaehne_zu_pruefen", ""))
+                        if zu: cmt = f"{zu}{' | ' + cmt if cmt else ''}"
+                    diag_rows.append((clean_text(lbl), urg, cmt))
+            for key, lbl in [("lab_imd","IMD"),("lab_mmd","MMD"),
+                              ("lab_nextgen","NextGen Onco"),("lab_sonstiges","Sonstiges (Labor)")]:
+                if supplements.get(key + "_cb", False):
+                    detail = clean_text(supplements.get(key, ""))
+                    label_full = f"{lbl}: {detail}" if detail else lbl
+                    urg = clean_text(supplements.get(f"{key}_urgency", ""))
+                    cmt = clean_text(supplements.get(f"{key}_urgency_comment", ""))
+                    diag_rows.append((clean_text(label_full), urg, cmt))
 
-        for key, lbl in [("lab_imd","IMD"),("lab_mmd","MMD"),
-                          ("lab_nextgen","NextGen Onco"),("lab_sonstiges","Sonstiges (Labor)")]:
-            cb = key + "_cb"
-            if supplements.get(cb, False):
-                _add_row(lbl, key, "diag", key)
+        # ── Therapie items (both tabs) — with week timing ──
+        if tab_name == "THERAPIEPLAN":
+            # Haupttherapien
+            for key, lbl in [
+                ("darm_biofilm","Darm - Biofilmentfernung"),
+                ("darmsanierung","Darmsanierung nach Paracelsus Klinik"),
+                ("hydrocolon","Hydrocolon (Darmspuelung)"),
+                ("parasiten","Parasitenbehandlung mit Vermox (3 Tage)"),
+                ("parasiten_bio","Biologisches Parasitenprogramm"),
+                ("leberdetox","Leberdetox nach Paracelsus Klinik"),
+                ("nierenprogramm","Nierenprogramm nach Dr. Clark"),
+                ("mikronaehrstoffe","Mikronaehrstoffe (NEM-Verordnung)"),
+                ("infusionsbehandlung","Infusionstherapie"),
+                ("neuraltherapie","Neuraltherapie"),
+                ("eigenblut","Eigenbluttherapie"),
+                ("ozontherapie","Ozontherapie"),
+                ("ausleitung_inf","Schwermetallausleitung Infusion"),
+                ("ausleitung_oral","Schwermetallausleitung oral"),
+            ]:
+                if _prescribed(key):
+                    _add_row(lbl, key, "haupt")
+            for key, lbl in [
+                ("infektion_bakt","Infektionsbehandlung Bakterien"),
+                ("infektion_virus","Infektionsbehandlung Viren"),
+                ("medikamente_text","Medikamentenverordnung - Rezept"),
+            ]:
+                if supplements.get(key + "_cb", False):
+                    _add_row(lbl, key, "haupt", key)
+            # Bio & Komplementäre Therapien
+            for key, lbl in [
+                ("bio_isopath","Biologische Isopathische Therapie"),
+                ("akupunktur","Akupunktur"),
+                ("homoeopathie","Homoeopathie (Anna)"),
+                ("bioresonanz","Bioresonanz (Anna)"),
+                ("timewaver_freq","TimeWaver Frequency Behandlung"),
+                ("hypnose","Hypnosetherapie"),
+                ("yager","Yagertherapie"),
+                ("energie_behandlungen","Energiebehandlungen bei Marie"),
+            ]:
+                if _prescribed(key):
+                    extra = []
+                    if key == "hypnose":
+                        for sk, sn in [("hypnose_noreen","Noreen"),("hypnose_martin","Martin"),("hypnose_miro","Miro")]:
+                            if supplements.get(sk): extra.append(sn)
+                        if supplements.get("hypnose_typ","").strip():
+                            extra.append(f"Typ: {supplements['hypnose_typ']}")
+                    _add_row(lbl, key, "bio", None)
+                    if extra: rows[-1] = (rows[-1][0], clean_text(", ".join(extra))) + rows[-1][2:]
+            for key, lbl, cmt in [
+                ("atemtherapie","Atemtherapie","atemtherapie_comment"),
+                ("bewegung","Bewegung","bewegung_comment"),
+                ("ernaehrung","Ernaehrungsberatung","ernaehrung_comment"),
+                ("aethetisch","Aesthetische Behandlung","aethetisch_comment"),
+                ("lowcarb","Low Carb Ernaehrung","lowcarb_comment"),
+                ("fasten","Intermittierendes Fasten","fasten_comment"),
+                ("krebsdiaet","Krebs Diaet","krebsdiaet_comment"),
+                ("ketogene","Ketogene Ernaehrung","ketogene_comment"),
+                ("basisch","Basische Ernaehrung","basisch_comment"),
+            ]:
+                if _prescribed(key):
+                    _add_row(lbl, key, "bio", cmt)
+                    if key == "aethetisch":
+                        sub = [s for s,k in [("Botox","aethetisch_botox"),("PRP","aethetisch_prp"),
+                                              ("Faeden","aethetisch_faeden"),("Hyaloron","aethetisch_hyaloron")]
+                               if supplements.get(k)]
+                        if sub: rows[-1] = (rows[-1][0], clean_text(", ".join(sub)+(" | "+rows[-1][1] if rows[-1][1] else ""))) + rows[-1][2:]
+            for key, lbl in [("naehrstoff_ausgleich","Naehrstoffmaengel ausgleichen"),
+                              ("therapie_sonstiges","Sonstiges")]:
+                if supplements.get(key + "_cb", False):
+                    _add_row(lbl, key, "bio", key)
+            for key, lbl in [("zwischengespraech_4","Zwischengespraech 4 Wochen (1/2h)"),
+                              ("zwischengespraech_8","Zwischengespraech 8 Wochen (1/2h)")]:
+                if _prescribed(key):
+                    _add_row(lbl, key, "gesp")
 
-        # Section 2: Haupttherapien
-        for key, lbl in [
-            ("darm_biofilm","Darm - Biofilmentfernung"),
-            ("darmsanierung","Darmsanierung nach Paracelsus Klinik"),
-            ("hydrocolon","Hydrocolon (Darmspuelung)"),
-            ("parasiten","Parasitenbehandlung mit Vermox (3 Tage)"),
-            ("parasiten_bio","Biologisches Parasitenprogramm"),
-            ("leberdetox","Leberdetox nach Paracelsus Klinik"),
-            ("nierenprogramm","Nierenprogramm nach Dr. Clark"),
-            ("mikronaehrstoffe","Mikronaehrstoffe (NEM-Verordnung)"),
-            ("infusionsbehandlung","Infusionstherapie"),
-            ("neuraltherapie","Neuraltherapie"),
-            ("eigenblut","Eigenbluttherapie"),
-            ("ozontherapie","Ozontherapie"),
-            ("ausleitung_inf","Schwermetallausleitung Infusion"),
-            ("ausleitung_oral","Schwermetallausleitung oral"),
-        ]:
-            if _prescribed(key):
-                _add_row(lbl, key, "haupt")
-
-        for key, lbl in [
-            ("infektion_bakt","Infektionsbehandlung Bakterien"),
-            ("infektion_virus","Infektionsbehandlung Viren"),
-            ("medikamente_text","Medikamentenverordnung - Rezept"),
-        ]:
-            cb = key + "_cb"
-            if supplements.get(cb, False):
-                _add_row(lbl, key, "haupt", key)
-
-        # Section 3: Bio
-        for key, lbl in [
-            ("bio_isopath","Biologische Isopathische Therapie"),
-            ("akupunktur","Akupunktur"),
-            ("homoeopathie","Homoeopathie (Anna)"),
-            ("bioresonanz","Bioresonanz (Anna)"),
-            ("timewaver_freq","TimeWaver Frequency Behandlung"),
-            ("hypnose","Hypnosetherapie"),
-            ("yager","Yagertherapie"),
-            ("energie_behandlungen","Energiebehandlungen bei Marie"),
-        ]:
-            if _prescribed(key):
-                extra = []
-                if key == "hypnose":
-                    for sk, sn in [("hypnose_noreen","Noreen"),("hypnose_martin","Martin"),("hypnose_miro","Miro")]:
-                        if supplements.get(sk): extra.append(sn)
-                    if supplements.get("hypnose_typ","").strip():
-                        extra.append(f"Typ: {supplements['hypnose_typ']}")
-                _add_row(lbl, key, "bio", None)
-                if extra: rows[-1] = (rows[-1][0], clean_text(", ".join(extra))) + rows[-1][2:]
-
-        for key, lbl, cmt in [
-            ("atemtherapie","Atemtherapie","atemtherapie_comment"),
-            ("bewegung","Bewegung","bewegung_comment"),
-            ("ernaehrung","Ernaehrungsberatung","ernaehrung_comment"),
-            ("aethetisch","Aesthetische Behandlung","aethetisch_comment"),
-            ("lowcarb","Low Carb Ernaehrung","lowcarb_comment"),
-            ("fasten","Intermittierendes Fasten","fasten_comment"),
-            ("krebsdiaet","Krebs Diaet","krebsdiaet_comment"),
-            ("ketogene","Ketogene Ernaehrung","ketogene_comment"),
-            ("basisch","Basische Ernaehrung","basisch_comment"),
-        ]:
-            if _prescribed(key):
-                _add_row(lbl, key, "bio", cmt)
-                if key == "aethetisch":
-                    sub = [s for s,k in [("Botox","aethetisch_botox"),("PRP","aethetisch_prp"),
-                                          ("Faeden","aethetisch_faeden"),("Hyaloron","aethetisch_hyaloron")]
-                           if supplements.get(k)]
-                    if sub: rows[-1] = (rows[-1][0], clean_text(", ".join(sub)+(" | "+rows[-1][1] if rows[-1][1] else ""))) + rows[-1][2:]
-
-        for key, lbl in [("naehrstoff_ausgleich","Naehrstoffmaengel ausgleichen"),
-                          ("therapie_sonstiges","Sonstiges")]:
-            if supplements.get(key+"_cb", False):
-                _add_row(lbl, key, "bio", key)
-
-        # Section 4: Gespraeche
-        for key, lbl in [("zwischengespraech_4","Zwischengespraech 4 Wochen (1/2h)"),
-                          ("zwischengespraech_8","Zwischengespraech 8 Wochen (1/2h)")]:
-            if _prescribed(key):
-                _add_row(lbl, key, "gesp")
-
-        # ── INFUSIONSTHERAPIE items ──
+        # INFUSIONSTHERAPIE items
         for key, lbl in [
             ("revita_immune","RevitaImmune"),("revita_immune_plus","RevitaImmunePlus"),
             ("revita_heal","Revita Heal (2x)"),("revita_bludder","RevitaBludder"),
@@ -1171,14 +1215,11 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         ]:
             if _prescribed(key):
                 _add_row(lbl, key, "inf")
-
-        # Custom Sonstiges rows
         for idx in [1, 2]:
             _cb  = supplements.get(f"inf_custom{idx}_cb", False)
             _txt = supplements.get(f"inf_custom{idx}_text", "")
             if _cb and _txt and str(_txt).strip():
                 _add_row(str(_txt), f"inf_custom{idx}", "inf", None)
-
         for key, lbl in [
             ("infektions_infusion","Infektions-Infusion / H2O2"),
             ("immun_booster","Immun-Boosterung"),
@@ -1186,64 +1227,131 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             ("naehrstoffinfusion","Naehrstoffinfusion"),
             ("eisen_infusion","Eisen Infusion (Ferinject)"),
         ]:
-            if supplements.get(key+"_cb", False):
-                cmt = supplements.get(key,"")
+            if supplements.get(key + "_cb", False):
+                cmt = supplements.get(key, "")
                 cmt_str = cmt if isinstance(cmt,str) else (", ".join(str(v) for v in cmt) if isinstance(cmt,list) else "")
                 _add_row(lbl, key, "inf", None)
                 if cmt_str: rows[-1] = (rows[-1][0], clean_text(cmt_str)) + rows[-1][2:]
-
-        # Extra rows — only if checkbox checked (legacy rows without cb included by default)
         for i in range(1, 3):
-            for sec in ("diag","haupt","bio","gesp","inf"):
+            for sec in ("haupt","bio","gesp","inf"):
                 slug   = f"{sec}_extra{i}"
                 txt    = supplements.get(slug + "_text", "")
-                cb_val = supplements.get(slug + "_cb", True)  # True = legacy compat
+                cb_val = supplements.get(slug + "_cb", True)
                 if txt and str(txt).strip() and cb_val:
                     _add_row(str(txt), slug, sec)
 
-        # ── Render table ──
-        pdf.ln(2)
-        # Col order: Therapie | Wo.von | Wo.bis | Von Datum | Bis Datum | Häufigkeit | Kommentar
-        TW = 277  # total landscape A4 width minus margins
-        # widths: therapy=70, wo_von=13, wo_bis=13, von=28, bis=28, hauf=22, kommentar=rest
-        sw_t  = [70, 13, 13, 28, 28, 22]
-        sw_k  = TW - sum(sw_t)   # kommentar gets the rest (~103)
-        sw    = sw_t + [sw_k]
-        hdrs  = ["Therapie / Verordnung","Wo.von","Wo.bis","Von Datum","Bis Datum","Haeufigkeit","Kommentar"]
+        # ── Hinweis box ──
+        pdf.ln(3)
+        pdf.set_fill_color(245, 250, 246)
+        pdf.set_draw_color(38, 96, 65)
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(60, 100, 70)
+        note = ("Hinweis: Die angegebenen Termine sind Richtwerte. "
+                "Die Reihenfolge der Massnahmen ist wichtiger als der genaue Zeitpunkt. "
+                "Bitte besprechen Sie Anpassungen mit Ihrem Arzt.")
+        pdf.multi_cell(0, 5, note, border=1, align="L", fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(3)
 
-        def _print_table_header():
+        TW = 277  # landscape A4 printable width
+        LH = 5
+
+        def _render_row(cells, widths):
+            """Render one data row, wrapping long cells."""
+            def _nlines(txt, w):
+                return max(1, int(pdf.get_string_width(txt) / max(1, w - 4)) + 1) if txt else 1
+            n = max(_nlines(c, w) for c, w in zip(cells, widths))
+            rh = LH * n
+            if pdf.get_y() + rh > pdf.page_break_trigger:
+                pdf.add_page()
+            sx2, sy2 = pdf.get_x(), pdf.get_y()
+            for cell, width in zip(cells, widths):
+                x = pdf.get_x()
+                if cell and pdf.get_string_width(cell) > (width - 4):
+                    pdf.set_xy(x, sy2)
+                    pdf.multi_cell(width, LH, cell, 1, 'L')
+                    pdf.set_xy(x + width, sy2)
+                else:
+                    pdf.cell(width, rh, cell, 1, 0, 'L')
+            pdf.set_xy(sx2, sy2 + rh)
+
+        # ── Diagnostik section (THERAPIEPLAN only) ──
+        if diag_rows:
             pdf.set_fill_color(38, 96, 65); pdf.set_text_color(255, 255, 255)
-            pdf.set_font("Helvetica", "B", 8)
-            for w, h in zip(sw, hdrs):
-                pdf.cell(w, 7, h, 1, 0, "C", True)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.cell(TW, 7, "DIAGNOSTIK & UEBERPRUEFUNGEN", 0, 1, "L", True)
+            pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "B", 8)
+            dw = [110, 80, TW - 190]
+            for h, w in zip(["Untersuchung","Zeitpunkt","Kommentar"], dw):
+                pdf.cell(w, 6, h, 1, 0, "C", False)
             pdf.ln()
-            pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "", 8)
+            pdf.set_font("Helvetica", "", 8)
+            for lbl, urg, cmt in diag_rows:
+                _render_row([lbl, urg, cmt], dw)
+            pdf.ln(4)
 
-        if rows:
-            _print_table_header()
-            LH = 5   # line height per line
-            for lbl, comment, ws, we, ds, de, fr in rows:
-                cells = [lbl, ws, we, ds, de, fr, comment]
-                # Compute needed lines per cell
-                def _lines(txt, w):
-                    if not txt: return 1
-                    return max(1, int(pdf.get_string_width(txt) / max(1, w - 4)) + 1)
-                n_lines = max(_lines(c, w) for c, w in zip(cells, sw))
-                rh = LH * n_lines
-                if pdf.get_y() + rh > pdf.page_break_trigger:
-                    pdf.add_page(); _print_table_header()
-                sx, sy = pdf.get_x(), pdf.get_y()
-                for i, (cell, width) in enumerate(zip(cells, sw)):
-                    x = pdf.get_x()
-                    needs_wrap = pdf.get_string_width(cell) > (width - 4) if cell else False
-                    if needs_wrap:
-                        pdf.set_xy(x, sy)
-                        pdf.multi_cell(width, LH, cell, 1, 'L')
-                        pdf.set_xy(x + width, sy)
-                    else:
-                        pdf.cell(width, rh, cell, 1, 0, 'L')
-                pdf.set_xy(sx, sy + rh)
-        else:
+        # ── Week-grouped therapy rows ──
+        from collections import defaultdict
+        week_groups = defaultdict(list)
+        no_week_rows = []
+        for row in rows:
+            _, _, ws, we, _, _, _ = row
+            try:
+                ws_i = int(ws) if ws and str(ws) not in ("", "0") else 0
+                we_i = int(we) if we and str(we) not in ("", "0") else 0
+            except Exception:
+                ws_i, we_i = 0, 0
+            if ws_i > 0:
+                week_groups[(ws_i, we_i)].append(row)
+            else:
+                no_week_rows.append(row)
+
+        # Col widths for therapy table: Therapie | Häufigkeit | Empfohlenes Datum | Kommentar
+        tw = [110, 28, 55, TW - 193]
+        th = ["Therapie / Verordnung", "Haeufigkeit", "Vorgeschl. Datum", "Kommentar"]
+
+        def _therapy_section_header(title):
+            pdf.set_fill_color(38, 96, 65); pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.cell(TW, 7, title, 0, 1, "L", True)
+            pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "B", 8)
+            for h, w in zip(th, tw):
+                pdf.cell(w, 6, h, 1, 0, "C", False)
+            pdf.ln()
+            pdf.set_font("Helvetica", "", 8)
+
+        def _week_label(ws_i, we_i, ds, de):
+            if ws_i == we_i:
+                wk_txt = f"Woche {ws_i}"
+            else:
+                wk_txt = f"Woche {ws_i}–{we_i}"
+            # Add ca. dates if available
+            ds_s = _fmt_dt(ds) if isinstance(ds, date) else (str(ds) if ds else "")
+            de_s = _fmt_dt(de) if isinstance(de, date) else (str(de) if de else "")
+            if ds_s and de_s:
+                wk_txt += f"  (ca. {ds_s} – {de_s})"
+            elif ds_s:
+                wk_txt += f"  (ab ca. {ds_s})"
+            return wk_txt
+
+        any_therapy = bool(week_groups) or bool(no_week_rows)
+        if any_therapy:
+            # Render sorted week groups
+            for (ws_i, we_i), grp in sorted(week_groups.items()):
+                # Take date from first row in group (all share same week range)
+                _, _, _, _, ds0, de0, _ = grp[0]
+                section_title = _week_label(ws_i, we_i, ds0, de0)
+                _therapy_section_header(section_title)
+                for lbl, comment, _, _, _, _, fr in grp:
+                    _render_row([lbl, fr, "", comment], tw)
+                pdf.ln(3)
+            # Rows with no week assigned
+            if no_week_rows:
+                _therapy_section_header("Weitere Angaben (kein Zeitplan)")
+                for lbl, comment, _, _, _, _, fr in no_week_rows:
+                    _render_row([lbl, fr, "", comment], tw)
+                pdf.ln(3)
+        elif not diag_rows:
             pdf.set_font("Helvetica", "", 9)
             pdf.cell(0, 6, "- Keine Verordnungen eingetragen", 0, 1)
 
@@ -1403,6 +1511,16 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         base = wk.rsplit("_",1)[0]
         if base in _inf: st.session_state[wk] = _inf[base]
     if "zusaetze" in _inf: st.session_state["zusaetze_select"] = _inf["zusaetze"]
+
+    # Seed diagnostik urgency widget keys so switching patients resets the radio/comment
+    _URGENCY_OPTS = ["", "So schnell wie möglich", "Jederzeit möglich"]
+    for _slug in ["zaehne", "analyse_bewegungsapparat", "schwermetalltest_tp",
+                  "lab_imd", "lab_mmd", "lab_nextgen", "lab_sonstiges"]:
+        _urg_val = _tp.get(f"{_slug}_urgency", "")
+        if _urg_val in _URGENCY_OPTS:
+            st.session_state[f"{_slug}_urgency_radio"] = _urg_val
+        _cmt_val = _tp.get(f"{_slug}_urgency_comment", "")
+        st.session_state[f"{_slug}_urgency_comment_inp"] = _cmt_val
 
     # ── Restore ALL timing widget keys (Wo von, Wo bis, Häufigkeit) ──
     # Keys in tp/inf data: "{prefix}_{slug}_w_start", "{prefix}_{slug}_freq" etc.
@@ -1747,58 +1865,82 @@ def main():
         tp = st.session_state.therapieplan_data
         therapieplan_schedule_data = {}
 
-        def _row(label, cb_key, cb_val, slug, kp, no_auto_date=False):
+        def _row(label, cb_key, cb_val, slug, kp):
             cols = st.columns(ROW_COLS)
             with cols[0]:
                 checked = st.checkbox(label, value=cb_val, key=cb_key)
-            _tb = None if (no_auto_date and not tp.get(f"{kp}_{slug}_date_start")) else patient["therapiebeginn"]
             therapieplan_schedule_data.update(
-                _inline_timing(checked, slug, _tb, patient["dauer"], kp, tp, cols))
+                _inline_timing(checked, slug, patient["therapiebeginn"], patient["dauer"], kp, tp, cols))
             return checked
+
+        # Diagnostik urgency/comment helpers (no week inputs)
+        _URGENCY_OPTS = ["", "So schnell wie möglich", "Jederzeit möglich"]
+
+        def _diag_row(label, cb_key, cb_val, slug):
+            """Diagnostik item: checkbox+label | urgency radio | comment."""
+            cols = st.columns(DIAG_COLS)
+            with cols[0]:
+                checked = st.checkbox(label, value=cb_val, key=cb_key)
+            saved_urg = tp.get(f"{slug}_urgency", "")
+            urg_idx = _URGENCY_OPTS.index(saved_urg) if saved_urg in _URGENCY_OPTS else 0
+            with cols[1]:
+                urgency = st.radio("", _URGENCY_OPTS, index=urg_idx,
+                    key=f"{slug}_urgency_radio", disabled=not checked, label_visibility="collapsed")
+            with cols[2]:
+                comment = st.text_input("", value=tp.get(f"{slug}_urgency_comment", ""),
+                    key=f"{slug}_urgency_comment_inp", placeholder="Kommentar...",
+                    disabled=not checked, label_visibility="collapsed")
+            return checked, (urgency if checked else ""), (comment if checked else "")
+
+        def _diag_lab_row(label, key_input, slug):
+            """Lab item: checkbox+label+detail | urgency radio | comment."""
+            cb_key = key_input + "_cb"
+            cols = st.columns(DIAG_COLS)
+            with cols[0]:
+                r1, r2 = st.columns([1.4, 1.6])
+                with r1: checked = st.checkbox(label, value=tp.get(cb_key, False), key=cb_key)
+                with r2: val = st.text_input("", value=tp.get(key_input, ""),
+                    key=key_input + "_input", placeholder="Details...",
+                    label_visibility="collapsed", disabled=not checked)
+            saved_urg = tp.get(f"{slug}_urgency", "")
+            urg_idx = _URGENCY_OPTS.index(saved_urg) if saved_urg in _URGENCY_OPTS else 0
+            with cols[1]:
+                urgency = st.radio("", _URGENCY_OPTS, index=urg_idx,
+                    key=f"{slug}_urgency_radio", disabled=not checked, label_visibility="collapsed")
+            with cols[2]:
+                comment = st.text_input("", value=tp.get(f"{slug}_urgency_comment", ""),
+                    key=f"{slug}_urgency_comment_inp", placeholder="Kommentar...",
+                    disabled=not checked, label_visibility="collapsed")
+            tp[cb_key] = checked
+            return (val if checked else ""), (urgency if checked else ""), (comment if checked else "")
 
         # ---- SECTION 1: Diagnostik & Überprüfung ----
         with st.expander("Diagnostik", expanded=tp.get("_sec_diagnostik_open", True)):
-            _sched_header()
+            _diag_header()
             st.markdown('<div class="section-subheader">Zähne</div>', unsafe_allow_html=True)
-            zaehne = _row(
+            zaehne, zaehne_urgency, zaehne_urgency_comment = _diag_row(
                 "Überprüfung der Zähne/Kieferknochen mittels OPG (Panoramaaufnahme mit lachendem Gebiss) / DVT",
-                "zaehne_checkbox", tp.get("zaehne", False), "zaehne", "diag", no_auto_date=True)
+                "zaehne_checkbox", tp.get("zaehne", False), "zaehne")
             zaehne_zu_pruefen = ""
             if zaehne:
                 zaehne_zu_pruefen = st.text_input("Zähne zu überprüfen (OPG/DVT):",
                     value=tp.get("zaehne_zu_pruefen", ""), key="zaehne_zu_pruefen_input")
 
             st.markdown('<div class="section-subheader">Bewegungsapparat & Schwermetalltest</div>', unsafe_allow_html=True)
-            analyse_bewegungsapparat = _row("Analyse Bewegungsapparat (Martin)",
+            analyse_bewegungsapparat, analyse_bewegungsapparat_urgency, analyse_bewegungsapparat_urgency_comment = _diag_row(
+                "Analyse Bewegungsapparat (Martin)",
                 "analyse_bewegungsapparat_checkbox", tp.get("analyse_bewegungsapparat", False),
-                "analyse_bewegungsapparat", "diag", no_auto_date=True)
-            schwermetalltest_tp = _row("Schwermetalltest mit DMSA und Ca EDTA",
+                "analyse_bewegungsapparat")
+            schwermetalltest_tp, schwermetalltest_tp_urgency, schwermetalltest_tp_urgency_comment = _diag_row(
+                "Schwermetalltest mit DMSA und Ca EDTA",
                 "schwermetalltest_tp_checkbox", tp.get("schwermetalltest_tp", False),
-                "schwermetalltest_tp", "diag", no_auto_date=True)
+                "schwermetalltest_tp")
 
             st.markdown('<div class="section-subheader">Labor & Diagnostik</div>', unsafe_allow_html=True)
-
-            def _text_timing(label, key_input, key_slug, kp, no_auto_date=False):
-                """Checkbox + text input on left (same row), timing on right."""
-                cb_key = key_input + "_cb"
-                cols = st.columns(ROW_COLS)
-                with cols[0]:
-                    r1, r2 = st.columns([2.0, 2.0])
-                    with r1: checked = st.checkbox(label, value=tp.get(cb_key, False), key=cb_key)
-                    with r2: val = st.text_input("", value=tp.get(key_input, ""),
-                        key=key_input + "_input", placeholder="Details...",
-                        label_visibility="collapsed", disabled=not checked)
-                _tb = None if (no_auto_date and not tp.get(f"{kp}_{key_slug}_date_start")) else patient["therapiebeginn"]
-                therapieplan_schedule_data.update(
-                    _inline_timing(checked, key_slug, _tb, patient["dauer"], kp, tp, cols))
-                tp[cb_key] = checked
-                return val if checked else ""
-
-            lab_imd       = _text_timing("IMD:",          "lab_imd",       "lab_imd",       "diag", no_auto_date=True)
-            lab_mmd       = _text_timing("MMD:",          "lab_mmd",       "lab_mmd",       "diag", no_auto_date=True)
-            lab_nextgen   = _text_timing("NextGen Onco:", "lab_nextgen",   "lab_nextgen",   "diag", no_auto_date=True)
-            lab_sonstiges = _text_timing("Sonstiges:",    "lab_sonstiges", "lab_sonstiges", "diag", no_auto_date=True)
-            _extra_rows("diag", "diag", tp, patient["therapiebeginn"], patient["dauer"], therapieplan_schedule_data, no_auto_date=True)
+            lab_imd,       lab_imd_urgency,       lab_imd_urgency_comment       = _diag_lab_row("IMD:",          "lab_imd",       "lab_imd")
+            lab_mmd,       lab_mmd_urgency,       lab_mmd_urgency_comment       = _diag_lab_row("MMD:",          "lab_mmd",       "lab_mmd")
+            lab_nextgen,   lab_nextgen_urgency,   lab_nextgen_urgency_comment   = _diag_lab_row("NextGen Onco:", "lab_nextgen",   "lab_nextgen")
+            lab_sonstiges, lab_sonstiges_urgency, lab_sonstiges_urgency_comment = _diag_lab_row("Sonstiges:",    "lab_sonstiges", "lab_sonstiges")
 
         # ---- SECTION 2: Haupttherapien ----
         with st.expander("Haupttherapien", expanded=tp.get("_sec_haupttherapien_open", False)):
@@ -1992,9 +2134,17 @@ def main():
         # Update session state
         new_tp = {
             "zaehne": zaehne, "zaehne_zu_pruefen": zaehne_zu_pruefen,
+            "zaehne_urgency": zaehne_urgency, "zaehne_urgency_comment": zaehne_urgency_comment,
             "analyse_bewegungsapparat": analyse_bewegungsapparat,
+            "analyse_bewegungsapparat_urgency": analyse_bewegungsapparat_urgency,
+            "analyse_bewegungsapparat_urgency_comment": analyse_bewegungsapparat_urgency_comment,
             "schwermetalltest_tp": schwermetalltest_tp,
-            "lab_imd": lab_imd, "lab_mmd": lab_mmd, "lab_nextgen": lab_nextgen, "lab_sonstiges": lab_sonstiges,
+            "schwermetalltest_tp_urgency": schwermetalltest_tp_urgency,
+            "schwermetalltest_tp_urgency_comment": schwermetalltest_tp_urgency_comment,
+            "lab_imd": lab_imd, "lab_imd_urgency": lab_imd_urgency, "lab_imd_urgency_comment": lab_imd_urgency_comment,
+            "lab_mmd": lab_mmd, "lab_mmd_urgency": lab_mmd_urgency, "lab_mmd_urgency_comment": lab_mmd_urgency_comment,
+            "lab_nextgen": lab_nextgen, "lab_nextgen_urgency": lab_nextgen_urgency, "lab_nextgen_urgency_comment": lab_nextgen_urgency_comment,
+            "lab_sonstiges": lab_sonstiges, "lab_sonstiges_urgency": lab_sonstiges_urgency, "lab_sonstiges_urgency_comment": lab_sonstiges_urgency_comment,
             "darm_biofilm": darm_biofilm, "darmsanierung": darmsanierung, "darmsanierung_dauer": darmsanierung_dauer,
             "hydrocolon": hydrocolon, "parasiten": parasiten, "parasiten_bio": parasiten_bio,
             "leberdetox": leberdetox, "nierenprogramm": nierenprogramm,
