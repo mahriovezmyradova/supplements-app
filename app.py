@@ -428,8 +428,8 @@ def _parse_saved_date(val, fallback):
 
 # =========================================================
 # INLINE TIMING HELPERS
-# Column layout: [label | 4W | 12W | Wo.Start | Wo.Ende | Häufigkeit | Von | Bis]
-ROW_COLS = [2.5, 0.3, 0.3, 0.55, 0.55, 0.9, 1.0, 1.0]
+# Column layout: [label | Wo.Start(+4W btn) | Wo.Ende(+12W btn) | Häufigkeit | Von | Bis]
+ROW_COLS = [3.0, 0.65, 0.65, 0.9, 1.0, 1.0]
 # Diagnostik section uses a different layout: [label | Zeitpunkt | Kommentar]
 DIAG_COLS = [3.5, 2.0, 2.5]
 
@@ -441,13 +441,11 @@ def _sched_header():
          "border-bottom:2px solid rgba(38,96,65,.2);white-space:nowrap;'>{}</div>")
     h = st.columns(ROW_COLS)
     h[0].markdown(H.format("&nbsp;"),         unsafe_allow_html=True)
-    h[1].markdown(H.format("4W"),             unsafe_allow_html=True)
-    h[2].markdown(H.format("12W"),            unsafe_allow_html=True)
-    h[3].markdown(H.format("Wo.&nbsp;Start"), unsafe_allow_html=True)
-    h[4].markdown(H.format("Wo.&nbsp;Ende"),  unsafe_allow_html=True)
-    h[5].markdown(H.format("Häufigkeit"),     unsafe_allow_html=True)
-    h[6].markdown(H.format("Von&nbsp;Datum"), unsafe_allow_html=True)
-    h[7].markdown(H.format("Bis&nbsp;Datum"), unsafe_allow_html=True)
+    h[1].markdown(H.format("4W / Wo.Start"),  unsafe_allow_html=True)
+    h[2].markdown(H.format("12W / Wo.Ende"),  unsafe_allow_html=True)
+    h[3].markdown(H.format("Häufigkeit"),     unsafe_allow_html=True)
+    h[4].markdown(H.format("Von&nbsp;Datum"), unsafe_allow_html=True)
+    h[5].markdown(H.format("Bis&nbsp;Datum"), unsafe_allow_html=True)
 
 
 def _diag_header():
@@ -484,9 +482,9 @@ def _extra_rows(section_key, kp, data_store, therapiebeginn, dauer, schedule_dic
 
 def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, data_store, cols):
     """
-    Renders timing inputs into cols[1..7].
-    cols[1]=4W btn, cols[2]=12W btn, cols[3]=Wo.Start, cols[4]=Wo.Ende,
-    cols[5]=Häufigkeit, cols[6]=Von Datum, cols[7]=Bis Datum.
+    Renders timing inputs into cols[1..5].
+    cols[1]=4W btn + Wo.Start selectbox (nested), cols[2]=12W btn + Wo.Ende (nested),
+    cols[3]=Häufigkeit, cols[4]=Von Datum, cols[5]=Bis Datum.
     Wo.Start and Wo.Ende default to "0" (not filled).
     Returns dict to merge into schedule_data.
     """
@@ -519,54 +517,58 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
     saved_freq = data_store.get(freq_key, "")
     if saved_freq not in freq_options: saved_freq = ""
 
-    # Shortcut buttons: 4W sets Wo.Start=1, Wo.Ende=4; 12W sets Wo.Start=1, Wo.Ende=12
+    # cols[1]: small "4W" shortcut + Wo.Start selectbox side-by-side
     with cols[1]:
-        if st.button("4W", key=f"q4_{key_prefix}_{slug}",
-                     disabled=not is_checked, use_container_width=True):
-            st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
-            st.session_state[f"we_{key_prefix}_{slug}"] = str(min(4, total_weeks))
+        b4_c, ws_c = st.columns([0.32, 0.68])
+        with b4_c:
+            if st.button("4W", key=f"q4_{key_prefix}_{slug}",
+                         disabled=not is_checked, use_container_width=True):
+                st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
+                st.session_state[f"we_{key_prefix}_{slug}"] = str(min(4, total_weeks))
+        with ws_c:
+            ws_idx = week_opts.index(saved_ws)
+            w_start_sel = st.selectbox("", week_opts, index=ws_idx,
+                key=f"ws_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
+
+    # cols[2]: small "12W" shortcut + Wo.Ende selectbox side-by-side
     with cols[2]:
-        if st.button("12W", key=f"q12_{key_prefix}_{slug}",
-                     disabled=not is_checked, use_container_width=True):
-            st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
-            st.session_state[f"we_{key_prefix}_{slug}"] = str(min(12, total_weeks))
-
-    # Wo.Start dropdown in cols[3]
-    ws_idx = week_opts.index(saved_ws)
-    w_start_sel = cols[3].selectbox("", week_opts, index=ws_idx,
-        key=f"ws_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
-
-    # Wo.Ende dropdown in cols[4] — options ≥ w_start
-    w_start_int = int(w_start_sel) if w_start_sel != "0" else 0
-    if w_start_int == 0:
-        we_opts = week_opts[:]
-    else:
-        we_opts = [str(w) for w in range(w_start_int, total_weeks + 1)]
-    if saved_we not in we_opts: saved_we = we_opts[0]
-    we_idx = we_opts.index(saved_we)
-    w_end_sel = cols[4].selectbox("", we_opts, index=we_idx,
-        key=f"we_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
+        b12_c, we_c = st.columns([0.35, 0.65])
+        with b12_c:
+            if st.button("12W", key=f"q12_{key_prefix}_{slug}",
+                         disabled=not is_checked, use_container_width=True):
+                st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
+                st.session_state[f"we_{key_prefix}_{slug}"] = str(min(12, total_weeks))
+        with we_c:
+            w_start_int = int(w_start_sel) if w_start_sel != "0" else 0
+            if w_start_int == 0:
+                we_opts = week_opts[:]
+            else:
+                we_opts = [str(w) for w in range(w_start_int, total_weeks + 1)]
+            if saved_we not in we_opts: saved_we = we_opts[0]
+            we_idx = we_opts.index(saved_we)
+            w_end_sel = st.selectbox("", we_opts, index=we_idx,
+                key=f"we_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
 
     fi   = freq_options.index(saved_freq) if saved_freq in freq_options else 0
-    freq = cols[5].selectbox("", freq_options, index=fi,
+    freq = cols[3].selectbox("", freq_options, index=fi,
         key=f"fr_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
 
-    w_end_int = int(w_end_sel) if w_end_sel != "0" else 0
+    w_start_int = int(w_start_sel) if w_start_sel != "0" else 0
+    w_end_int   = int(w_end_sel)   if w_end_sel   != "0" else 0
 
     if tb is not None and w_start_int > 0 and w_end_int > 0:
         auto_ds = tb + timedelta(weeks=w_start_int - 1)
         auto_de = tb + timedelta(weeks=w_end_int) - timedelta(days=1)
-        date_start = cols[6].date_input("", value=auto_ds, format="DD.MM.YYYY",
+        date_start = cols[4].date_input("", value=auto_ds, format="DD.MM.YYYY",
             key=f"ds_{key_prefix}_{slug}_{auto_ds.isoformat()}", disabled=not is_checked, label_visibility="collapsed")
-        date_end   = cols[7].date_input("", value=auto_de, format="DD.MM.YYYY",
+        date_end   = cols[5].date_input("", value=auto_de, format="DD.MM.YYYY",
             key=f"de_{key_prefix}_{slug}_{auto_de.isoformat()}", disabled=not is_checked, label_visibility="collapsed")
     else:
-        # Week not set or no therapiebeginn — show empty date pickers
         _ds_saved = _coerce_date(data_store.get(ds_key)) if data_store.get(ds_key) else None
         _de_saved = _coerce_date(data_store.get(de_key)) if data_store.get(de_key) else None
-        date_start = cols[6].date_input("", value=_ds_saved, format="DD.MM.YYYY",
+        date_start = cols[4].date_input("", value=_ds_saved, format="DD.MM.YYYY",
             key=f"ds_{key_prefix}_{slug}_free", disabled=not is_checked, label_visibility="collapsed")
-        date_end   = cols[7].date_input("", value=_de_saved, format="DD.MM.YYYY",
+        date_end   = cols[5].date_input("", value=_de_saved, format="DD.MM.YYYY",
             key=f"de_{key_prefix}_{slug}_free", disabled=not is_checked, label_visibility="collapsed")
 
     return {
@@ -1324,15 +1326,14 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             if ws_i == we_i:
                 wk_txt = f"Woche {ws_i}"
             else:
-                wk_txt = f"Woche {ws_i}–{we_i}"
-            # Add ca. dates if available
+                wk_txt = f"Woche {ws_i}-{we_i}"
             ds_s = _fmt_dt(ds) if isinstance(ds, date) else (str(ds) if ds else "")
             de_s = _fmt_dt(de) if isinstance(de, date) else (str(de) if de else "")
             if ds_s and de_s:
-                wk_txt += f"  (ca. {ds_s} – {de_s})"
+                wk_txt += f"  (ca. {ds_s} - {de_s})"
             elif ds_s:
                 wk_txt += f"  (ab ca. {ds_s})"
-            return wk_txt
+            return clean_text(wk_txt)
 
         any_therapy = bool(week_groups) or bool(no_week_rows)
         if any_therapy:
@@ -1513,7 +1514,7 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
     if "zusaetze" in _inf: st.session_state["zusaetze_select"] = _inf["zusaetze"]
 
     # Seed diagnostik urgency widget keys so switching patients resets the radio/comment
-    _URGENCY_OPTS = ["", "So schnell wie möglich", "Jederzeit möglich"]
+    _URGENCY_OPTS = ["So schnell wie möglich", "Jederzeit möglich"]
     for _slug in ["zaehne", "analyse_bewegungsapparat", "schwermetalltest_tp",
                   "lab_imd", "lab_mmd", "lab_nextgen", "lab_sonstiges"]:
         _urg_val = _tp.get(f"{_slug}_urgency", "")
@@ -1874,7 +1875,7 @@ def main():
             return checked
 
         # Diagnostik urgency/comment helpers (no week inputs)
-        _URGENCY_OPTS = ["", "So schnell wie möglich", "Jederzeit möglich"]
+        _URGENCY_OPTS = ["So schnell wie möglich", "Jederzeit möglich"]
 
         def _diag_row(label, cb_key, cb_val, slug):
             """Diagnostik item: checkbox+label | urgency radio | comment."""
