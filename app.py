@@ -429,7 +429,7 @@ def _parse_saved_date(val, fallback):
 # =========================================================
 # INLINE TIMING HELPERS
 # Column layout: [label | Wo.Start(+4W btn) | Wo.Ende(+12W btn) | Häufigkeit | Von | Bis]
-ROW_COLS = [3.0, 0.65, 0.65, 0.9, 1.0, 1.0]
+ROW_COLS = [2.5, 0.38, 0.38, 0.55, 0.55, 0.9, 1.0, 1.0]
 # Diagnostik section uses a different layout: [label | Zeitpunkt | Kommentar]
 DIAG_COLS = [3.5, 2.0, 2.5]
 
@@ -441,11 +441,13 @@ def _sched_header():
          "border-bottom:2px solid rgba(38,96,65,.2);white-space:nowrap;'>{}</div>")
     h = st.columns(ROW_COLS)
     h[0].markdown(H.format("&nbsp;"),         unsafe_allow_html=True)
-    h[1].markdown(H.format("4W / Wo.Start"),  unsafe_allow_html=True)
-    h[2].markdown(H.format("12W / Wo.Ende"),  unsafe_allow_html=True)
-    h[3].markdown(H.format("Häufigkeit"),     unsafe_allow_html=True)
-    h[4].markdown(H.format("Von&nbsp;Datum"), unsafe_allow_html=True)
-    h[5].markdown(H.format("Bis&nbsp;Datum"), unsafe_allow_html=True)
+    h[1].markdown(H.format("4W"),             unsafe_allow_html=True)
+    h[2].markdown(H.format("12W"),            unsafe_allow_html=True)
+    h[3].markdown(H.format("Wo.&nbsp;Start"), unsafe_allow_html=True)
+    h[4].markdown(H.format("Wo.&nbsp;Ende"),  unsafe_allow_html=True)
+    h[5].markdown(H.format("Häufigkeit"),     unsafe_allow_html=True)
+    h[6].markdown(H.format("Von&nbsp;Datum"), unsafe_allow_html=True)
+    h[7].markdown(H.format("Bis&nbsp;Datum"), unsafe_allow_html=True)
 
 
 def _diag_header():
@@ -482,9 +484,9 @@ def _extra_rows(section_key, kp, data_store, therapiebeginn, dauer, schedule_dic
 
 def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, data_store, cols):
     """
-    Renders timing inputs into cols[1..5].
-    cols[1]=4W btn + Wo.Start selectbox (nested), cols[2]=12W btn + Wo.Ende (nested),
-    cols[3]=Häufigkeit, cols[4]=Von Datum, cols[5]=Bis Datum.
+    Renders timing inputs into cols[1..7].
+    cols[1]=4W btn, cols[2]=12W btn, cols[3]=Wo.Start, cols[4]=Wo.Ende,
+    cols[5]=Häufigkeit, cols[6]=Von Datum, cols[7]=Bis Datum.
     Wo.Start and Wo.Ende default to "0" (not filled).
     Returns dict to merge into schedule_data.
     """
@@ -517,58 +519,49 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
     saved_freq = data_store.get(freq_key, "")
     if saved_freq not in freq_options: saved_freq = ""
 
-    # cols[1]: small "4W" shortcut + Wo.Start selectbox side-by-side
+    # Shortcut buttons: 4W → Wo.Start=1, Wo.Ende=4; 12W → Wo.Start=1, Wo.Ende=12
     with cols[1]:
-        b4_c, ws_c = st.columns([0.32, 0.68])
-        with b4_c:
-            if st.button("4W", key=f"q4_{key_prefix}_{slug}",
-                         disabled=not is_checked, use_container_width=True):
-                st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
-                st.session_state[f"we_{key_prefix}_{slug}"] = str(min(4, total_weeks))
-        with ws_c:
-            ws_idx = week_opts.index(saved_ws)
-            w_start_sel = st.selectbox("", week_opts, index=ws_idx,
-                key=f"ws_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
-
-    # cols[2]: small "12W" shortcut + Wo.Ende selectbox side-by-side
+        if st.button("4W", key=f"q4_{key_prefix}_{slug}", disabled=not is_checked):
+            st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
+            st.session_state[f"we_{key_prefix}_{slug}"] = str(min(4, total_weeks))
     with cols[2]:
-        b12_c, we_c = st.columns([0.35, 0.65])
-        with b12_c:
-            if st.button("12W", key=f"q12_{key_prefix}_{slug}",
-                         disabled=not is_checked, use_container_width=True):
-                st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
-                st.session_state[f"we_{key_prefix}_{slug}"] = str(min(12, total_weeks))
-        with we_c:
-            w_start_int = int(w_start_sel) if w_start_sel != "0" else 0
-            if w_start_int == 0:
-                we_opts = week_opts[:]
-            else:
-                we_opts = [str(w) for w in range(w_start_int, total_weeks + 1)]
-            if saved_we not in we_opts: saved_we = we_opts[0]
-            we_idx = we_opts.index(saved_we)
-            w_end_sel = st.selectbox("", we_opts, index=we_idx,
-                key=f"we_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
+        if st.button("12W", key=f"q12_{key_prefix}_{slug}", disabled=not is_checked):
+            st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
+            st.session_state[f"we_{key_prefix}_{slug}"] = str(min(12, total_weeks))
 
-    fi   = freq_options.index(saved_freq) if saved_freq in freq_options else 0
-    freq = cols[3].selectbox("", freq_options, index=fi,
-        key=f"fr_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
+    ws_idx = week_opts.index(saved_ws)
+    w_start_sel = cols[3].selectbox("", week_opts, index=ws_idx,
+        key=f"ws_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
 
     w_start_int = int(w_start_sel) if w_start_sel != "0" else 0
-    w_end_int   = int(w_end_sel)   if w_end_sel   != "0" else 0
+    if w_start_int == 0:
+        we_opts = week_opts[:]
+    else:
+        we_opts = [str(w) for w in range(w_start_int, total_weeks + 1)]
+    if saved_we not in we_opts: saved_we = we_opts[0]
+    we_idx = we_opts.index(saved_we)
+    w_end_sel = cols[4].selectbox("", we_opts, index=we_idx,
+        key=f"we_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
+
+    fi   = freq_options.index(saved_freq) if saved_freq in freq_options else 0
+    freq = cols[5].selectbox("", freq_options, index=fi,
+        key=f"fr_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
+
+    w_end_int = int(w_end_sel) if w_end_sel != "0" else 0
 
     if tb is not None and w_start_int > 0 and w_end_int > 0:
         auto_ds = tb + timedelta(weeks=w_start_int - 1)
         auto_de = tb + timedelta(weeks=w_end_int) - timedelta(days=1)
-        date_start = cols[4].date_input("", value=auto_ds, format="DD.MM.YYYY",
+        date_start = cols[6].date_input("", value=auto_ds, format="DD.MM.YYYY",
             key=f"ds_{key_prefix}_{slug}_{auto_ds.isoformat()}", disabled=not is_checked, label_visibility="collapsed")
-        date_end   = cols[5].date_input("", value=auto_de, format="DD.MM.YYYY",
+        date_end   = cols[7].date_input("", value=auto_de, format="DD.MM.YYYY",
             key=f"de_{key_prefix}_{slug}_{auto_de.isoformat()}", disabled=not is_checked, label_visibility="collapsed")
     else:
         _ds_saved = _coerce_date(data_store.get(ds_key)) if data_store.get(ds_key) else None
         _de_saved = _coerce_date(data_store.get(de_key)) if data_store.get(de_key) else None
-        date_start = cols[4].date_input("", value=_ds_saved, format="DD.MM.YYYY",
+        date_start = cols[6].date_input("", value=_ds_saved, format="DD.MM.YYYY",
             key=f"ds_{key_prefix}_{slug}_free", disabled=not is_checked, label_visibility="collapsed")
-        date_end   = cols[5].date_input("", value=_de_saved, format="DD.MM.YYYY",
+        date_end   = cols[7].date_input("", value=_de_saved, format="DD.MM.YYYY",
             key=f"de_{key_prefix}_{slug}_free", disabled=not is_checked, label_visibility="collapsed")
 
     return {
@@ -727,7 +720,7 @@ class PDF(FPDF):
         self.set_y(-12)
         self.set_font("Helvetica", "", 8)
         self.set_text_color(140, 140, 140)
-        name_part = f"  –  {self._patient_name}" if self._patient_name else ""
+        name_part = f"  -  {self._patient_name}" if self._patient_name else ""
         self.cell(0, 5, f"{self._tab_title}{name_part}  |  Seite {self.page_no()} von {{nb}}", 0, 0, "C")
         self.set_text_color(0, 0, 0)
 
