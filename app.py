@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 import streamlit as st
 from fpdf import FPDF
@@ -7,6 +8,10 @@ from PIL import Image
 import base64
 from supabase_db import SupabaseDB
 from auth import login_page, check_auth, logout, admin_panel
+
+def strip_dosage(name):
+    """Remove trailing dosage like '1000mg', '200mg/d', '500 mg' from supplement name."""
+    return re.sub(r'\s+\d+[\.,]?\d*\s*(mg|mcg|ug|g|ml|IE|IU)(\/\w+)?\b.*$', '', str(name), flags=re.IGNORECASE).strip()
 
 
 st.set_page_config("THERAPIEKONZEPT", layout="wide")
@@ -233,15 +238,21 @@ with st.sidebar:
 # =========================================================
 col1, col2, col3 = st.columns([1.2, 3, 0.7])
 with col1:
-    st.markdown('<div class="header-logo">', unsafe_allow_html=True)
     if os.path.exists("clinic_logo.png"):
-        st.image("clinic_logo.png", width=200)
-    st.markdown('</div>', unsafe_allow_html=True)
+        with open("clinic_logo.png", "rb") as _lf:
+            import base64 as _b64
+            _logo_b64 = _b64.b64encode(_lf.read()).decode()
+        st.markdown(
+            f'<a href="https://revitaclinic.de" target="_blank">'
+            f'<img src="data:image/png;base64,{_logo_b64}" width="200" style="display:block;"/>'
+            f'</a>',
+            unsafe_allow_html=True)
 with col2:
     st.markdown("<h1 style='text-align:center;margin:0;font-family:DM Serif Display,serif;color:rgb(38,96,65);'>THERAPIEKONZEPT</h1>", unsafe_allow_html=True)
 with col3:
     st.markdown("""<div style="font-size:14px;line-height:1.8;color:#555;text-align:right;">
-    Clausewitzstr. 2<br>10629 Berlin-Charlottenburg<br>+49 30 6633110<br>info@revitaclinic.de<br>www.revitaclinic.de
+    Clausewitzstr. 2<br>10629 Berlin-Charlottenburg<br>+49 30 6633110<br>info@revitaclinic.de<br>
+    <a href="https://revitaclinic.de" target="_blank" style="color:#1a73e8;text-decoration:none;">www.revitaclinic.de</a>
     </div>""", unsafe_allow_html=True)
 
 
@@ -462,8 +473,8 @@ def _diag_header():
 
 
 def _extra_rows(section_key, kp, data_store, therapiebeginn, dauer, schedule_dict, no_auto_date=False):
-    """2 free-text extra rows. Checkbox controls PDF inclusion."""
-    for i in range(1, 3):
+    """3 free-text extra rows. Checkbox controls PDF inclusion."""
+    for i in range(1, 4):
         slug    = f"{section_key}_extra{i}"
         cb_key  = slug + "_cb"
         cols    = st.columns(ROW_COLS)
@@ -702,17 +713,19 @@ class PDF(FPDF):
         if os.path.exists("clinic_logo.png"):
             try:
                 self.image("clinic_logo.png", 10, 8, 40)
+                self.link(10, 8, 40, 25, "https://revitaclinic.de")
             except:
                 pass
         self.set_font("Helvetica", "B", 16)
-        self.set_xy(60, 13)
-        self.cell(150, 10, self._tab_title, 0, 0, "C")
-        self.set_font("Helvetica", "", 10)
-        self.set_xy(230, 10)
-        self.multi_cell(60, 5,
-            "Clausewitzstr. 2\n10629 Berlin-Charlottenburg\n+49 30 6633110\ninfo@revitaclinic.de",
+        self.set_xy(50, 13)
+        self.cell(180, 10, self._tab_title, 0, 0, "C")
+        self.set_font("Helvetica", "", 9)
+        self.set_xy(228, 8)
+        self.multi_cell(62, 4.5,
+            "Clausewitzstr. 2\n10629 Berlin-Charlottenburg\n+49 30 6633110\ninfo@revitaclinic.de\nwww.revitaclinic.de",
             0, "R")
-        self.ln(12)
+        self.set_text_color(0, 0, 0)
+        self.ln(10)
 
     def footer(self):
         if self.page_no() == 1:
@@ -745,6 +758,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         text = str(text)
         for src, dst in [('•','-'),('–','-'),('—','-'),('−','-')]:
             text = text.replace(src, dst)
+        return text
         return text
 
     pdf.set_font("Helvetica", "B", 10)
@@ -801,14 +815,52 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 6, "Kontrolltermine:", 0, 1)
     pdf.set_font("Helvetica", "", 10)
-    kt = ""
-    if patient.get("kontrolltermin_4"): kt += "- 4 Wochen\n"
-    if patient.get("kontrolltermin_12"): kt += "- 12 Wochen\n"
+    kt_parts = []
+    if patient.get("kontrolltermin_4"):  kt_parts.append("+ 4 Wochen")
+    if patient.get("kontrolltermin_12"): kt_parts.append("+ 12 Wochen")
     kk = clean_text(patient.get("kontrolltermin_kommentar", ""))
+    kt_line = "        ".join(kt_parts) if kt_parts else "Keine Angaben"
+    pdf.cell(0, 5, kt_line, 0, 1)
     if kk:
-        kt += f"Kommentar: {kk}"
-    pdf.multi_cell(0, 5, kt or "- Keine Angaben", 0, "L")
-    pdf.ln(3)
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.cell(0, 5, f"Kommentar: {kk}", 0, 1)
+        pdf.set_font("Helvetica", "", 10)
+    pdf.ln(2)
+
+    # ── Therapie-Fortschritt (shown below Kontrolltermine, before section header) ──
+    if tab_name in ("THERAPIEPLAN", "INFUSIONSTHERAPIE"):
+        import datetime as _dt2
+        tb_raw = patient.get("therapiebeginn")
+        tb_pdf = None
+        if isinstance(tb_raw, _dt2.date): tb_pdf = tb_raw
+        elif isinstance(tb_raw, str):
+            try: tb_pdf = _dt2.date.fromisoformat(tb_raw)
+            except: pass
+        if tb_pdf:
+            today_pdf = _dt2.date.today()
+            dauer_pdf = int(patient.get("dauer", 6))
+            total_w_pdf = dauer_pdf * 4
+            weeks_done = max(0, (today_pdf - tb_pdf).days // 7)
+            progress_pct = min(100, int(weeks_done / total_w_pdf * 100)) if total_w_pdf > 0 else 0
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_text_color(38, 96, 65)
+            pdf.cell(0, 5, f"Therapie-Fortschritt: Woche {weeks_done} von {total_w_pdf} ({progress_pct}%)", 0, 1)
+            kt_items = []
+            if patient.get("kontrolltermin_4"):
+                kt_items.append(("4 Wochen", patient.get("kt4_date", "")))
+            if patient.get("kontrolltermin_12"):
+                kt_items.append(("12 Wochen", patient.get("kt12_date", "")))
+            if patient.get("kontrolltermin_24"):
+                kt_items.append(("24 Monate", patient.get("kt24_date", "")))
+            if kt_items:
+                pdf.set_font("Helvetica", "", 8)
+                kt_str = "  |  ".join(
+                    f"KT {name}: {_fmt_dt(v) if isinstance(v, _dt2.date) else str(v)}"
+                    for name, v in kt_items)
+                pdf.cell(0, 5, clean_text(kt_str), 0, 1)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(2)
+    pdf.ln(1)
 
     if tab_name == "NEM" and isinstance(supplements, list):
         table_width = 277
@@ -817,9 +869,9 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         pdf.set_font("Helvetica", "B", 12)
         pdf.cell(table_width, 8, "NAHRUNGSERGÄNZUNGSMITTEL (NEM) VO", 0, 1, "L", True)
 
-        headers = ["Supplement","Gesamt-dos.","Darreichungsform","Pro Einnahme",
+        headers = ["Supplement","Darreichungsform",
                    "Nüchtern","Morgens","Mittags","Abends","Nachts","Kommentar"]
-        base_widths = [58, 20, 36, 22, 15, 15, 15, 15, 15]
+        base_widths = [78, 38, 15, 15, 15, 15, 15]
         widths = base_widths + [table_width - sum(base_widths)]
 
         pdf.set_fill_color(38, 96, 65)
@@ -833,10 +885,8 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
 
         for s in supplements:
             cells = [
-                clean_text(s.get("name", "")),
-                clean_text(s.get("Gesamt-dosierung", "")),
+                strip_dosage(clean_text(s.get("name", ""))),
                 clean_text(s.get("Darreichungsform", "")),
-                clean_text(s.get("Pro Einnahme", "")),
                 f"{clean_text(s.get('Nüchtern',''))}x" if s.get("Nüchtern","").strip() else "",
                 f"{clean_text(s.get('Morgens',''))}x"  if s.get("Morgens","").strip()  else "",
                 f"{clean_text(s.get('Mittags',''))}x"  if s.get("Mittags","").strip()  else "",
@@ -962,46 +1012,6 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             "schwermetalltest": "Schwermetalltest DMSA/Ca EDTA",
         }
 
-        # ── Therapie-Fortschritt progress bar as text ──
-        import datetime as _dt2
-        tb_raw = patient.get("therapiebeginn")
-        tb_pdf = None
-        if isinstance(tb_raw, _dt2.date): tb_pdf = tb_raw
-        elif isinstance(tb_raw, str):
-            try: tb_pdf = _dt2.date.fromisoformat(tb_raw)
-            except: pass
-        if tb_pdf:
-            today_pdf = _dt2.date.today()
-            dauer_pdf = int(patient.get("dauer", 6))
-            total_w_pdf = dauer_pdf * 4
-            weeks_done = max(0, (today_pdf - tb_pdf).days // 7)
-            progress_pct = min(100, int(weeks_done / total_w_pdf * 100)) if total_w_pdf > 0 else 0
-            bar_width = 200
-            filled = int(bar_width * progress_pct / 100)
-            pdf.set_fill_color(38, 96, 65)
-            pdf.rect(pdf.get_x(), pdf.get_y(), filled, 5, 'F')
-            pdf.set_fill_color(220, 232, 220)
-            pdf.rect(pdf.get_x() + filled, pdf.get_y(), bar_width - filled, 5, 'F')
-            pdf.ln(7)
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.set_text_color(38, 96, 65)
-            pdf.cell(0, 5, f"Therapie-Fortschritt: Woche {weeks_done} von {total_w_pdf} ({progress_pct}%)", 0, 1)
-            # Kontrolltermine markers
-            kt_items = []
-            if patient.get("kontrolltermin_4"):
-                kt_items.append(("4 Wochen", patient.get("kt4_date", "")))
-            if patient.get("kontrolltermin_12"):
-                kt_items.append(("12 Wochen", patient.get("kt12_date", "")))
-            if patient.get("kontrolltermin_24"):
-                kt_items.append(("24 Monate", patient.get("kt24_date", "")))
-            if kt_items:
-                pdf.set_font("Helvetica", "", 8)
-                kt_str = "  |  ".join(
-                    f"KT {name}: {_fmt_dt(v) if isinstance(v, _dt2.date) else str(v)}"
-                    for name, v in kt_items)
-                pdf.cell(0, 5, clean_text(kt_str), 0, 1)
-            pdf.set_text_color(0, 0, 0)
-            pdf.ln(2)
 
         # ═══════════════════════════════════════════════════════════
         # Build the prescription table.
@@ -1036,7 +1046,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             for kp in (prefix, f"inf_std", "diag","haupt","bio","gesp","inf",""):
                 base = f"{kp}_{slug}" if kp else slug
                 ws = supplements.get(f"{base}_w_start","")
-                if ws:
+                if ws and str(ws) not in ("", "0"):
                     we  = supplements.get(f"{base}_w_end","")
                     ds  = supplements.get(f"{base}_date_start","")
                     de  = supplements.get(f"{base}_date_end","")
@@ -1049,7 +1059,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             for kp in ("inf",):
                 base = f"{kp}_{std_slug}"
                 ws = supplements.get(f"{base}_w_start","")
-                if ws:
+                if ws and str(ws) not in ("", "0"):
                     we  = supplements.get(f"{base}_w_end","")
                     ds  = supplements.get(f"{base}_date_start","")
                     de  = supplements.get(f"{base}_date_end","")
@@ -1227,7 +1237,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                 cmt_str = cmt if isinstance(cmt,str) else (", ".join(str(v) for v in cmt) if isinstance(cmt,list) else "")
                 _add_row(lbl, key, "inf", None)
                 if cmt_str: rows[-1] = (rows[-1][0], clean_text(cmt_str)) + rows[-1][2:]
-        for i in range(1, 3):
+        for i in range(1, 4):
             for sec in ("haupt","bio","gesp","inf"):
                 slug   = f"{sec}_extra{i}"
                 txt    = supplements.get(slug + "_text", "")
@@ -2198,22 +2208,10 @@ def main():
             if "last_main_dauer" not in st.session_state:
                 st.session_state.last_main_dauer = patient["dauer"]
 
-            def get_pro_Einnahme_options(df_form):
-                    if not df_form: return [""]
-                    f = df_form.lower()
-                    if any(x in f for x in ["kapsel","tablette","pflaster"]):
-                        return ["","1","2","3","4","5","6","7","8","9","10","½","¼","¾","1½","2½"]
-                    elif any(x in f for x in ["tropfen","lösung","flüssig","öl","spray","creme","gel"]):
-                        return ["","1","2","3","4","5","6","7","8","9","10","½","¼","¾","1½","2½","Tr","ML"]
-                    elif any(x in f for x in ["pulver","sachet"]):
-                        return ["","1","2","3","4","5","6","7","8","9","10","½","¼","¾","1½","2½","g","mg","EL","TL","ML"]
-                    elif "tee" in f:
-                        return ["","1","2","3","4","5","Beutel","TL","EL"]
-                    return ["","1","2","3","4","5","6","7","8","9","10","½","¼","¾","1½","2½","g","mg","EL","TL","ML","Tr"]
 
             st.markdown('<div class="sticky-header">', unsafe_allow_html=True)
-            header_cols = st.columns([2.3, 0.8, 1.2, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 2])
-            for col, text in zip(header_cols, ["Supplement","Gesamt-dosierung","Darreichungsform","Pro Einnahme","Nüchtern","Morgens","Mittags","Abends","Nachts","Kommentar"]):
+            header_cols = st.columns([2.3, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
+            for col, text in zip(header_cols, ["Supplement","Darreichungsform","Nüchtern","Morgens","Mittags","Abends","Nachts","Kommentar"]):
                 col.markdown(f"**{text}**")
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -2235,9 +2233,9 @@ def main():
 
                     with st.expander(category_name, expanded=False):
                         for row in supplement_rows:
-                            cols = st.columns([2.2, 0.9, 1.2, 1, 0.7, 0.7, 0.7, 0.7, 0.7, 2.3])
+                            cols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
                             supplement_name = row["name"]
-                            cols[0].markdown(supplement_name)
+                            cols[0].markdown(strip_dosage(supplement_name))
 
                             # Resolve initial values: prefer widget session state (already set),
                             # then loaded prescription, then defaults.
@@ -2280,28 +2278,23 @@ def main():
                             i_nacht = st.session_state.get(nacht_key, "")
                             i_com   = st.session_state.get(com_key,   "")
 
-                            gd_options = ["","1","2","3","4","5","6","7","8","9","10","12","14","16","18","20","22","24","26","28","30","35","40","45","50","60","70","80","90","100","120","150","180","200","250","300","400","500"]
-                            gd_val = cols[1].selectbox("", gd_options,
-                                index=gd_options.index(i_gd) if i_gd in gd_options else 0,
-                                key=gd_key, label_visibility="collapsed", accept_new_options=True)
+                            # Gesamt-dosierung and Pro Einnahme: kept in session state, hidden from UI
+                            gd_val = i_gd
 
                             dosage_presets = ["Kapseln","Lösung","Tabletten","Pulver","Tropfen","Sachet","Öl","Spray","Creme","Gel","Flüssig","Tee","Pflaster"]
-                            sel_form = cols[2].selectbox("", dosage_presets,
+                            sel_form = cols[1].selectbox("", dosage_presets,
                                 index=dosage_presets.index(i_form) if i_form in dosage_presets else 0,
                                 key=form_key, label_visibility="collapsed", accept_new_options=True)
 
-                            pe_options = get_pro_Einnahme_options(sel_form)
-                            pe_val = cols[3].selectbox("", pe_options,
-                                index=pe_options.index(i_pe) if i_pe in pe_options else 0,
-                                key=pe_key, label_visibility="collapsed", accept_new_options=True)
+                            pe_val = i_pe
 
                             dose_options = ["","1","2","3","4","5"]
-                            nue_val  = cols[4].selectbox("", dose_options, index=dose_options.index(i_nue)   if i_nue   in dose_options else 0, key=nue_key,  label_visibility="collapsed")
-                            morg_val = cols[5].selectbox("", dose_options, index=dose_options.index(i_morg)  if i_morg  in dose_options else 0, key=morg_key, label_visibility="collapsed")
-                            mitt_val = cols[6].selectbox("", dose_options, index=dose_options.index(i_mitt)  if i_mitt  in dose_options else 0, key=mitt_key, label_visibility="collapsed")
-                            abend_val= cols[7].selectbox("", dose_options, index=dose_options.index(i_abend) if i_abend in dose_options else 0, key=abend_key,label_visibility="collapsed")
-                            nacht_val= cols[8].selectbox("", dose_options, index=dose_options.index(i_nacht) if i_nacht in dose_options else 0, key=nacht_key,label_visibility="collapsed")
-                            comment  = cols[9].text_input("", key=com_key, placeholder="Kommentar", value=i_com or "", label_visibility="collapsed")
+                            nue_val  = cols[2].selectbox("", dose_options, index=dose_options.index(i_nue)   if i_nue   in dose_options else 0, key=nue_key,  label_visibility="collapsed")
+                            morg_val = cols[3].selectbox("", dose_options, index=dose_options.index(i_morg)  if i_morg  in dose_options else 0, key=morg_key, label_visibility="collapsed")
+                            mitt_val = cols[4].selectbox("", dose_options, index=dose_options.index(i_mitt)  if i_mitt  in dose_options else 0, key=mitt_key, label_visibility="collapsed")
+                            abend_val= cols[5].selectbox("", dose_options, index=dose_options.index(i_abend) if i_abend in dose_options else 0, key=abend_key,label_visibility="collapsed")
+                            nacht_val= cols[6].selectbox("", dose_options, index=dose_options.index(i_nacht) if i_nacht in dose_options else 0, key=nacht_key,label_visibility="collapsed")
+                            comment  = cols[7].text_input("", key=com_key, placeholder="Kommentar", value=i_com or "", label_visibility="collapsed")
 
                             all_supplements_data.append({
                                 "name": supplement_name, "Gesamt-dosierung": gd_val,
