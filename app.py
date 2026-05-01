@@ -171,7 +171,8 @@ hr { margin: 16px 0 !important; border-width: 1px !important; border-color: #e8e
     background-color: #1a1a2e; color: white; padding: 6px 10px; border-radius: 6px;
     font-size: 13px; white-space: nowrap; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
-div[data-testid="column"] { padding: 0 8px !important; }
+div[data-testid="column"] { padding: 0 8px !important; min-width: 0 !important; }
+div[data-testid="stVerticalBlockBorderWrapper"] { overflow-x: auto !important; }
 .stMarkdown, .stTextInput, .stNumberInput, .stDateInput,
 .stSelectbox, .stMultiSelect, .stCheckbox, .stRadio, .stButton, .stAlert { margin-bottom: 8px !important; }
 p, li, .stMarkdown p { line-height: 1.65 !important; font-size: 15px !important; font-family: 'DM Sans', sans-serif !important; }
@@ -882,6 +883,19 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             pdf.ln(2)
     pdf.ln(1)
 
+    # ── Hinweis box (shown after Therapie-Fortschritt, before section tables) ──
+    if tab_name in ("THERAPIEPLAN", "INFUSIONSTHERAPIE"):
+        pdf.set_fill_color(245, 250, 246)
+        pdf.set_draw_color(38, 96, 65)
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(60, 100, 70)
+        note = ("Hinweis: Die angegebenen Termine sind Richtwerte. "
+                "Die Reihenfolge der Massnahmen ist wichtiger als der genaue Zeitpunkt. "
+                "Bitte besprechen Sie Anpassungen mit Ihrem Arzt.")
+        pdf.multi_cell(0, 5, note, border=1, align="L", fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(3)
+
     if tab_name == "NEM" and isinstance(supplements, list):
         table_width = 277
         pdf.set_fill_color(38, 96, 65)
@@ -1238,19 +1252,6 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                 if txt and str(txt).strip() and cb_val:
                     _add_row(str(txt), slug, sec)
 
-        # ── Hinweis box ──
-        pdf.ln(3)
-        pdf.set_fill_color(245, 250, 246)
-        pdf.set_draw_color(38, 96, 65)
-        pdf.set_font("Helvetica", "I", 8)
-        pdf.set_text_color(60, 100, 70)
-        note = ("Hinweis: Die angegebenen Termine sind Richtwerte. "
-                "Die Reihenfolge der Massnahmen ist wichtiger als der genaue Zeitpunkt. "
-                "Bitte besprechen Sie Anpassungen mit Ihrem Arzt.")
-        pdf.multi_cell(0, 5, note, border=1, align="L", fill=True)
-        pdf.set_text_color(0, 0, 0)
-        pdf.ln(3)
-
         TW = 277  # landscape A4 printable width
         LH = 5
 
@@ -1309,6 +1310,9 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         th = ["Therapie / Verordnung", "Haeufigkeit", "Vorgeschl. Datum", "Kommentar"]
 
         def _therapy_section_header(title):
+            # section title (7) + col headers (6) + at least one row (5) = 18px minimum
+            if pdf.get_y() + 18 > pdf.page_break_trigger:
+                pdf.add_page()
             pdf.set_fill_color(38, 96, 65); pdf.set_text_color(255, 255, 255)
             pdf.set_font("Helvetica", "B", 9)
             pdf.cell(TW, 7, title, 0, 1, "L", True)
@@ -1333,21 +1337,18 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
 
         any_therapy = bool(week_groups) or bool(no_week_rows)
         if any_therapy:
-            # Render sorted week groups
+            # Render sorted week groups — continuous, no gap between groups
             for (ws_i, we_i), grp in sorted(week_groups.items()):
-                # Take date from first row in group (all share same week range)
                 _, _, _, _, ds0, de0, _ = grp[0]
                 section_title = _week_label(ws_i, we_i, ds0, de0)
                 _therapy_section_header(section_title)
                 for lbl, comment, _, _, _, _, fr in grp:
                     _render_row([lbl, fr, "", comment], tw)
-                pdf.ln(3)
             # Rows with no week assigned
             if no_week_rows:
                 _therapy_section_header("Weitere Angaben (kein Zeitplan)")
                 for lbl, comment, _, _, _, _, fr in no_week_rows:
                     _render_row([lbl, fr, "", comment], tw)
-                pdf.ln(3)
         elif not diag_rows:
             pdf.set_font("Helvetica", "", 9)
             pdf.cell(0, 6, "- Keine Verordnungen eingetragen", 0, 1)
