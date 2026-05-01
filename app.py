@@ -1114,6 +1114,13 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             if comment_key:
                 cv = supplements.get(comment_key, "")
                 if isinstance(cv, str): comment = cv
+            if not comment:
+                # auto-fallback: try {slug}_comment and std_{slug}_comment
+                for ck in (f"{slug}_comment", f"std_{slug}_comment"):
+                    cv = supplements.get(ck, "")
+                    if isinstance(cv, str) and cv:
+                        comment = cv
+                        break
             rows.append((clean_text(lbl), clean_text(comment),
                          ws, we, ds, de, fr))
 
@@ -1305,22 +1312,38 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             else:
                 no_week_rows.append(row)
 
-        # Col widths for therapy table: Therapie | Häufigkeit | Empfohlenes Datum | Kommentar
+        # Col widths for therapy table: Therapie | Häufigkeit | Vorgeschl. Datum | Kommentar
         tw = [110, 28, 55, TW - 193]
         th = ["Therapie / Verordnung", "Haeufigkeit", "Vorgeschl. Datum", "Kommentar"]
 
-        def _therapy_section_header(title):
-            # section title (7) + col headers (6) + at least one row (5) = 18px minimum
-            if pdf.get_y() + 18 > pdf.page_break_trigger:
-                pdf.add_page()
+        _table_started = [False]  # track whether the column header row has been rendered
+
+        def _render_col_headers():
             pdf.set_fill_color(38, 96, 65); pdf.set_text_color(255, 255, 255)
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(TW, 7, title, 0, 1, "L", True)
-            pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "B", 8)
+            pdf.set_font("Helvetica", "B", 8)
             for h, w in zip(th, tw):
-                pdf.cell(w, 6, h, 1, 0, "C", False)
+                pdf.cell(w, 6, h, 1, 0, "C", True)
             pdf.ln()
-            pdf.set_font("Helvetica", "", 8)
+            pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "", 8)
+
+        def _therapy_section_header(title):
+            if not _table_started[0]:
+                # First group: need space for col headers (6) + group divider (6) + 1 row (5)
+                if pdf.get_y() + 17 > pdf.page_break_trigger:
+                    pdf.add_page()
+                _render_col_headers()
+                _table_started[0] = True
+            else:
+                # Subsequent groups: need space for divider (6) + 1 row (5)
+                if pdf.get_y() + 11 > pdf.page_break_trigger:
+                    pdf.add_page()
+                    _render_col_headers()  # re-render headers at top of new page
+            # Light green week-group divider row (no column sub-headers)
+            pdf.set_fill_color(220, 235, 225)
+            pdf.set_text_color(38, 96, 65)
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.cell(TW, 6, f"  {title}", 1, 1, "L", True)
+            pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "", 8)
 
         def _week_label(ws_i, we_i, ds, de):
             if ws_i == we_i:
@@ -1337,18 +1360,20 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
 
         any_therapy = bool(week_groups) or bool(no_week_rows)
         if any_therapy:
-            # Render sorted week groups — continuous, no gap between groups
+            # Render sorted week groups — one continuous table, no gaps
             for (ws_i, we_i), grp in sorted(week_groups.items()):
                 _, _, _, _, ds0, de0, _ = grp[0]
                 section_title = _week_label(ws_i, we_i, ds0, de0)
                 _therapy_section_header(section_title)
-                for lbl, comment, _, _, _, _, fr in grp:
-                    _render_row([lbl, fr, "", comment], tw)
+                for lbl, comment, _, _, ds, de, fr in grp:
+                    date_txt = f"{ds} - {de}" if (ds and de and ds != de) else (ds or de or "")
+                    _render_row([lbl, fr, date_txt, comment], tw)
             # Rows with no week assigned
             if no_week_rows:
                 _therapy_section_header("Weitere Angaben (kein Zeitplan)")
-                for lbl, comment, _, _, _, _, fr in no_week_rows:
-                    _render_row([lbl, fr, "", comment], tw)
+                for lbl, comment, _, _, ds, de, fr in no_week_rows:
+                    date_txt = f"{ds} - {de}" if (ds and de and ds != de) else (ds or de or "")
+                    _render_row([lbl, fr, date_txt, comment], tw)
         elif not diag_rows:
             pdf.set_font("Helvetica", "", 9)
             pdf.cell(0, 6, "- Keine Verordnungen eingetragen", 0, 1)
@@ -1486,7 +1511,7 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         if dk in _tp:
             st.session_state[wk] = _tp[dk]
 
-    # ── Infusion checkbox widgets ──
+    # ── Infusion checkbox + comment widgets ──
     _inf = inf or {}
     for ik in ["revita_immune","revita_immune_plus","revita_heal","revita_bludder",
                "revita_ferro","revita_energy","revita_focus","revita_nad","revita_relax",
@@ -1499,6 +1524,7 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
                "infektions_infusion"]:
         if ik in _inf:
             st.session_state[f"inf_{ik}_cb"] = bool(_inf[ik])
+        st.session_state[f"inf_{ik}_comment_inp"] = _inf.get(f"{ik}_comment", "")
     if "zusaetze" in _inf: st.session_state["zusaetze_select"] = _inf["zusaetze"]
 
     # Seed diagnostik urgency widget keys so switching patients resets the radio/comment
@@ -2350,10 +2376,10 @@ def main():
         inf = st.session_state.infusion_data
 
         def _inf_row(label, key_prefix, tooltip, default_checked=False):
-            """Infusion checkbox with label+tooltip on left, timing on right."""
+            """Infusion checkbox with label+tooltip on left, comment in middle, timing on right."""
             cols = st.columns(ROW_COLS)
             with cols[0]:
-                cb_cols = st.columns([0.07, 0.93])
+                cb_cols = st.columns([0.06, 0.57, 0.37])
                 with cb_cols[0]:
                     value = st.checkbox("", value=inf.get(key_prefix, default_checked),
                         key=f"inf_{key_prefix}_cb", label_visibility="collapsed")
@@ -2363,8 +2389,13 @@ def main():
                         f'<span style="font-size:14px;font-family:DM Sans,sans-serif;">{label}</span>' +
                         f'<span class="info-icon" data-tooltip="{tooltip}">ⓘ</span></div>',
                         unsafe_allow_html=True)
+                with cb_cols[2]:
+                    comment = st.text_input("", value=inf.get(f"{key_prefix}_comment", ""),
+                        key=f"inf_{key_prefix}_comment_inp",
+                        placeholder="Kommentar...", label_visibility="collapsed", disabled=not value)
             infusion_schedule_data.update(
                 _inline_timing(value, key_prefix, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
+            infusion_schedule_data[f"{key_prefix}_comment"] = comment
             return value
 
         def _procain_row(label, key_prefix, tooltip):
