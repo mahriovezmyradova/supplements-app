@@ -490,7 +490,7 @@ def _extra_rows(section_key, kp, data_store, therapiebeginn, dauer, schedule_dic
                     key=slug + "_text_input", placeholder=f"Zusatz {i}...", label_visibility="collapsed")
         _tb = None if (no_auto_date and not data_store.get(f"{kp}_{slug}_date_start")) else therapiebeginn
         schedule_dict.update(
-            _inline_timing(checked and bool(val), slug, _tb, dauer, kp, data_store, cols))
+            _inline_timing(checked, slug, _tb, dauer, kp, data_store, cols))
         schedule_dict[slug + "_text"] = val
         schedule_dict[cb_key] = checked
 
@@ -817,12 +817,30 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 6, "Kontrolltermine:", 0, 1)
     pdf.set_font("Helvetica", "", 10)
+    # Register DejaVuSans for checkmark character (Unicode ✔ U+2714)
+    _dejavu_registered = getattr(pdf, "_dejavu_registered", False)
+    if not _dejavu_registered and os.path.exists("DejaVuSans.ttf"):
+        try:
+            pdf.add_font("DejaVu", "", "DejaVuSans.ttf", uni=True)
+            pdf._dejavu_registered = True
+            _dejavu_registered = True
+        except Exception:
+            pass
     kt_parts = []
-    if patient.get("kontrolltermin_4"):  kt_parts.append("+ 4 Wochen")
-    if patient.get("kontrolltermin_12"): kt_parts.append("+ 12 Wochen")
+    if patient.get("kontrolltermin_4"):  kt_parts.append("4 Wochen")
+    if patient.get("kontrolltermin_12"): kt_parts.append("12 Wochen")
     kk = clean_text(patient.get("kontrolltermin_kommentar", ""))
-    kt_line = "        ".join(kt_parts) if kt_parts else "Keine Angaben"
-    pdf.cell(0, 5, kt_line, 0, 1)
+    if kt_parts:
+        for part in kt_parts:
+            if _dejavu_registered:
+                pdf.set_font("DejaVu", "", 10)
+                pdf.cell(6, 5, "✔", 0, 0)
+                pdf.set_font("Helvetica", "", 10)
+            else:
+                pdf.cell(6, 5, "OK", 0, 0)
+            pdf.cell(0, 5, f" {part}", 0, 1)
+    else:
+        pdf.cell(0, 5, "Keine Angaben", 0, 1)
     if kk:
         pdf.set_font("Helvetica", "I", 9)
         pdf.cell(0, 5, f"Kommentar: {kk}", 0, 1)
@@ -830,7 +848,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
     pdf.ln(2)
 
     # ── Therapie-Fortschritt (shown below Kontrolltermine, before section header) ──
-    if tab_name in ("THERAPIEPLAN", "INFUSIONSTHERAPIE"):
+    if tab_name in ("THERAPIEPLAN", "INFUSIONSTHERAPIE", "NEM"):
         import datetime as _dt2
         tb_raw = patient.get("therapiebeginn")
         tb_pdf = None
@@ -1679,19 +1697,16 @@ def patient_inputs():
     if kontrolltermin_4 or kontrolltermin_12 or kontrolltermin_24:
         kd1, kd2, kd3 = st.columns(3)
         if kontrolltermin_4:
-            def_kt4d = parse_date(pdata.get("kt4_date", (therapiebeginn + timedelta(weeks=4)).isoformat()))
             with kd1:
-                kt4_date = st.date_input("Datum 4 Wochen", value=def_kt4d,
+                kt4_date = st.date_input("Datum 4 Wochen", value=therapiebeginn + timedelta(weeks=4),
                     format="DD.MM.YYYY", key="kt4_date_input")
         if kontrolltermin_12:
-            def_kt12d = parse_date(pdata.get("kt12_date", (therapiebeginn + timedelta(weeks=12)).isoformat()))
             with kd2:
-                kt12_date = st.date_input("Datum 12 Wochen", value=def_kt12d,
+                kt12_date = st.date_input("Datum 12 Wochen", value=therapiebeginn + timedelta(weeks=12),
                     format="DD.MM.YYYY", key="kt12_date_input")
         if kontrolltermin_24:
-            def_kt24d = parse_date(pdata.get("kt24_date", (therapiebeginn + timedelta(weeks=96)).isoformat()))
             with kd3:
-                kt24_date = st.date_input("Datum 24 Monate", value=def_kt24d,
+                kt24_date = st.date_input("Datum 24 Monate", value=therapiebeginn + timedelta(weeks=96),
                     format="DD.MM.YYYY", key="kt24_date_input")
 
     st.markdown("---")
@@ -1863,7 +1878,8 @@ def main():
             return checked, (urgency if checked else ""), (comment if checked else "")
 
         def _diag_lab_row(label, key_input, slug):
-            """Lab item: checkbox+label+detail | urgency radio | comment."""
+            """Lab item: checkbox+label+detail | urgency radio | comment.
+            Returns (checked, val, urgency, comment)."""
             cb_key = key_input + "_cb"
             cols = st.columns(DIAG_COLS)
             with cols[0]:
@@ -1881,8 +1897,7 @@ def main():
                 comment = st.text_input("", value=tp.get(f"{slug}_urgency_comment", ""),
                     key=f"{slug}_urgency_comment_inp", placeholder="Kommentar...",
                     disabled=not checked, label_visibility="collapsed")
-            tp[cb_key] = checked
-            return (val if checked else ""), (urgency if checked else ""), (comment if checked else "")
+            return checked, (val if checked else ""), (urgency if checked else ""), (comment if checked else "")
 
         # ---- SECTION 1: Diagnostik & Überprüfung ----
         with st.expander("Diagnostik", expanded=tp.get("_sec_diagnostik_open", True)):
@@ -1907,10 +1922,10 @@ def main():
                 "schwermetalltest_tp")
 
             st.markdown('<div class="section-subheader">Labor & Diagnostik</div>', unsafe_allow_html=True)
-            lab_imd,       lab_imd_urgency,       lab_imd_urgency_comment       = _diag_lab_row("IMD:",          "lab_imd",       "lab_imd")
-            lab_mmd,       lab_mmd_urgency,       lab_mmd_urgency_comment       = _diag_lab_row("MMD:",          "lab_mmd",       "lab_mmd")
-            lab_nextgen,   lab_nextgen_urgency,   lab_nextgen_urgency_comment   = _diag_lab_row("NextGen Onco:", "lab_nextgen",   "lab_nextgen")
-            lab_sonstiges, lab_sonstiges_urgency, lab_sonstiges_urgency_comment = _diag_lab_row("Sonstiges:",    "lab_sonstiges", "lab_sonstiges")
+            lab_imd_cb,       lab_imd,       lab_imd_urgency,       lab_imd_urgency_comment       = _diag_lab_row("IMD:",          "lab_imd",       "lab_imd")
+            lab_mmd_cb,       lab_mmd,       lab_mmd_urgency,       lab_mmd_urgency_comment       = _diag_lab_row("MMD:",          "lab_mmd",       "lab_mmd")
+            lab_nextgen_cb,   lab_nextgen,   lab_nextgen_urgency,   lab_nextgen_urgency_comment   = _diag_lab_row("NextGen Onco:", "lab_nextgen",   "lab_nextgen")
+            lab_sonstiges_cb, lab_sonstiges, lab_sonstiges_urgency, lab_sonstiges_urgency_comment = _diag_lab_row("Sonstiges:",    "lab_sonstiges", "lab_sonstiges")
 
         # ---- SECTION 2: Haupttherapien ----
         with st.expander("Haupttherapien", expanded=tp.get("_sec_haupttherapien_open", False)):
@@ -2111,10 +2126,10 @@ def main():
             "schwermetalltest_tp": schwermetalltest_tp,
             "schwermetalltest_tp_urgency": schwermetalltest_tp_urgency,
             "schwermetalltest_tp_urgency_comment": schwermetalltest_tp_urgency_comment,
-            "lab_imd": lab_imd, "lab_imd_urgency": lab_imd_urgency, "lab_imd_urgency_comment": lab_imd_urgency_comment,
-            "lab_mmd": lab_mmd, "lab_mmd_urgency": lab_mmd_urgency, "lab_mmd_urgency_comment": lab_mmd_urgency_comment,
-            "lab_nextgen": lab_nextgen, "lab_nextgen_urgency": lab_nextgen_urgency, "lab_nextgen_urgency_comment": lab_nextgen_urgency_comment,
-            "lab_sonstiges": lab_sonstiges, "lab_sonstiges_urgency": lab_sonstiges_urgency, "lab_sonstiges_urgency_comment": lab_sonstiges_urgency_comment,
+            "lab_imd_cb": lab_imd_cb, "lab_imd": lab_imd, "lab_imd_urgency": lab_imd_urgency, "lab_imd_urgency_comment": lab_imd_urgency_comment,
+            "lab_mmd_cb": lab_mmd_cb, "lab_mmd": lab_mmd, "lab_mmd_urgency": lab_mmd_urgency, "lab_mmd_urgency_comment": lab_mmd_urgency_comment,
+            "lab_nextgen_cb": lab_nextgen_cb, "lab_nextgen": lab_nextgen, "lab_nextgen_urgency": lab_nextgen_urgency, "lab_nextgen_urgency_comment": lab_nextgen_urgency_comment,
+            "lab_sonstiges_cb": lab_sonstiges_cb, "lab_sonstiges": lab_sonstiges, "lab_sonstiges_urgency": lab_sonstiges_urgency, "lab_sonstiges_urgency_comment": lab_sonstiges_urgency_comment,
             "darm_biofilm": darm_biofilm, "darmsanierung": darmsanierung, "darmsanierung_dauer": darmsanierung_dauer,
             "hydrocolon": hydrocolon, "parasiten": parasiten, "parasiten_bio": parasiten_bio,
             "leberdetox": leberdetox, "nierenprogramm": nierenprogramm,
@@ -2198,10 +2213,15 @@ def main():
                     if not supplement_rows: continue
 
                     with st.expander(category_name, expanded=False):
+                        _seen_stripped = set()
                         for row in supplement_rows:
-                            cols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
                             supplement_name = row["name"]
-                            cols[0].markdown(strip_dosage(supplement_name))
+                            _stripped = strip_dosage(supplement_name)
+                            if _stripped in _seen_stripped:
+                                continue
+                            _seen_stripped.add(_stripped)
+                            cols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
+                            cols[0].markdown(_stripped)
 
                             # Resolve initial values: prefer widget session state (already set),
                             # then loaded prescription, then defaults.
@@ -2580,6 +2600,38 @@ def main():
     if _is_admin:
         with tabs[3]:
             admin_panel(db)
+
+    # ── Autosave (every 45s if data changed and patient already exists in DB) ──
+    _last_loaded = st.session_state.get("last_loaded_patient", "")
+    if _last_loaded and patient.get("patient", "").strip() == _last_loaded:
+        import time as _time
+        import hashlib as _hashlib
+        _now = _time.time()
+        _cooldown = 45
+        _last_as = st.session_state.get("_autosave_time", 0)
+        if _now - _last_as >= _cooldown:
+            def _quick_ser(obj):
+                if isinstance(obj, dict):  return {k: _quick_ser(v) for k,v in obj.items()}
+                if isinstance(obj, list):  return [_quick_ser(i) for i in obj]
+                if isinstance(obj, date):  return obj.isoformat()
+                return obj
+            _as_tp  = _quick_ser(st.session_state.get("therapieplan_data", {}))
+            _as_inf = _quick_ser(st.session_state.get("infusion_data", {}))
+            _as_nem = st.session_state.get("nem_prescriptions", [])
+            _as_hash = _hashlib.md5(str((_as_tp, _as_inf, _as_nem)).encode()).hexdigest()
+            if _as_hash != st.session_state.get("_autosave_hash", ""):
+                _as_pd = st.session_state.get("patient_data", {})
+                def _as_d(v):
+                    if isinstance(v, (date,)): return v.isoformat()
+                    return v
+                _as_patient = {k: _as_d(v) for k, v in _as_pd.items()}
+                _ok = save_patient_data(_as_patient, _as_nem, _as_tp,
+                                        _quick_ser(st.session_state.get("ernaehrung_data", {})),
+                                        _as_inf)
+                if _ok:
+                    st.session_state["_autosave_time"] = _now
+                    st.session_state["_autosave_hash"] = _as_hash
+                    st.toast("Automatisch gespeichert")
 
     # Auto-download PDF
     if st.session_state.get("auto_download_pdf"):
