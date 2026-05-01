@@ -10,8 +10,10 @@ from supabase_db import SupabaseDB
 from auth import login_page, check_auth, logout, admin_panel
 
 def strip_dosage(name):
-    """Remove trailing dosage like '1000mg', '200mg/d', '500 mg' from supplement name."""
-    return re.sub(r'\s+\d+[\.,]?\d*\s*(mg|mcg|ug|g|ml|IE|IU)(\/\w+)?\b.*$', '', str(name), flags=re.IGNORECASE).strip()
+    """Remove trailing dosage/unit info from supplement name (e.g. '1000mg', '1 EL', '= 2g EPA/DHA')."""
+    s = re.sub(r'\s+=.*$', '', str(name))  # strip '= ...' suffix first
+    s = re.sub(r'\s+\d+[\.,]?\d*\s*(mg|mcg|ug|g|ml|IE|IU|EL|TL|Beutel)(\/\w+)?\b.*$', '', s, flags=re.IGNORECASE)
+    return s.strip()
 
 
 st.set_page_config("THERAPIEKONZEPT", layout="wide")
@@ -979,7 +981,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             "analyse_bewegungsapparat": "Analyse Bewegungsapparat (Martin)",
             "schwermetalltest_tp": "Schwermetalltest mit DMSA und Ca EDTA",
             "revita_immune": "RevitaImmune", "revita_immune_plus": "RevitaImmunePlus",
-            "revita_heal": "Revita Heal (2x)", "revita_bludder": "RevitaBludder",
+            "revita_heal": "Revita Heal (2x)", "revita_bludder": "RevitaBladder",
             "revita_ferro": "RevitaFerro", "revita_energy": "RevitaEnergyBoost",
             "revita_focus": "RevitaFocus", "revita_nad": "RevitaNAD+",
             "revita_relax": "RevitaRelax", "revita_fit": "RevitaFit",
@@ -992,22 +994,11 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             "procain_basen": "Procain Baseninfusion mit Magnesium",
             "artemisinin": "Artemisinin Infusion mit 2x Lysin",
             "perioperative": "Perioperative Infusion (3 Infusionen)",
-            "detox_standard": "Detox-Infusion Standard", "detox_maxi": "Detox-Infusion Maxi",
-            "aufbauinfusion": "Aufbauinfusion nach Detox",
-            "anti_aging": "Anti Aging Infusion komplett",
             "nerven_aufbau": "Nerven Aufbau Infusion",
-            "leberentgiftung": "Leberentgiftungsinfusion",
             "anti_oxidantien": "Anti-Oxidantien Infusion",
             "aminoinfusion": "Aminoinfusion leaky gut",
-            "relax_infusion": "Relax Infusion",
-            "eisen_infusion": "Eisen Infusion (Ferinject)",
-            "vitamin_c": "Hochdosis Vitamin C", "vitamin_b_komplex": "Vit. B-Komplex",
-            "vitamin_d": "Vit. D", "vitamin_b6_b12_folsaeure": "Vit. B6/B12/Folsäure",
-            "vitamin_b3": "Vit. B3", "zusaetze": "Zusätze",
+            "zusaetze": "Zusätze",
             "infektions_infusion": "Infektions-Infusion / H2O2",
-            "immun_booster": "Immun-Boosterung",
-            "energetisierungsinfusion": "Energetisierungsinfusion",
-            "naehrstoffinfusion": "Nährstoffinfusion",
             "oxyvenierung": "Oxyvenierung",
             "schwermetalltest": "Schwermetalltest DMSA/Ca EDTA",
         }
@@ -1196,7 +1187,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         # INFUSIONSTHERAPIE items
         for key, lbl in [
             ("revita_immune","RevitaImmune"),("revita_immune_plus","RevitaImmunePlus"),
-            ("revita_heal","Revita Heal (2x)"),("revita_bludder","RevitaBludder"),
+            ("revita_heal","Revita Heal (2x)"),("revita_bludder","RevitaBladder"),
             ("revita_ferro","RevitaFerro"),("revita_energy","RevitaEnergyBoost"),
             ("revita_focus","RevitaFocus"),("revita_nad","RevitaNAD+"),
             ("revita_relax","RevitaRelax"),("revita_fit","RevitaFit"),
@@ -1208,15 +1199,11 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             ("mito_energy","Mito-Energy Behandlung"),("oxyvenierung","Oxyvenierung"),
             ("schwermetalltest","Schwermetalltest DMSA/Ca EDTA"),
             ("procain_basen","Procain Baseninfusion"),("artemisinin","Artemisinin Infusion"),
-            ("perioperative","Perioperative Infusion"),("detox_standard","Detox-Infusion Standard"),
-            ("detox_maxi","Detox-Infusion Maxi"),("aufbauinfusion","Aufbauinfusion nach Detox"),
-            ("anti_aging","Anti Aging Infusion"),("nerven_aufbau","Nerven Aufbau Infusion"),
-            ("leberentgiftung","Leberentgiftungsinfusion"),
+            ("perioperative","Perioperative Infusion"),
+            ("nerven_aufbau","Nerven Aufbau Infusion"),
             ("anti_oxidantien","Anti-Oxidantien Infusion"),
-            ("aminoinfusion","Aminoinfusion leaky gut"),("relax_infusion","Relax Infusion"),
-            ("vitamin_c","Hochdosis Vitamin C"),("vitamin_b_komplex","Vit. B-Komplex"),
-            ("vitamin_d","Vit. D"),("vitamin_b6_b12_folsaeure","Vit. B6/B12/Folsaeure"),
-            ("vitamin_b3","Vit. B3"),
+            ("aminoinfusion","Aminoinfusion leaky gut"),
+            ("infektions_infusion","Infektions-Infusion / H2O2"),
         ]:
             if _prescribed(key):
                 _add_row(lbl, key, "inf")
@@ -1225,18 +1212,6 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             _txt = supplements.get(f"inf_custom{idx}_text", "")
             if _cb and _txt and str(_txt).strip():
                 _add_row(str(_txt), f"inf_custom{idx}", "inf", None)
-        for key, lbl in [
-            ("infektions_infusion","Infektions-Infusion / H2O2"),
-            ("immun_booster","Immun-Boosterung"),
-            ("energetisierungsinfusion","Energetisierungsinfusion"),
-            ("naehrstoffinfusion","Naehrstoffinfusion"),
-            ("eisen_infusion","Eisen Infusion (Ferinject)"),
-        ]:
-            if supplements.get(key + "_cb", False):
-                cmt = supplements.get(key, "")
-                cmt_str = cmt if isinstance(cmt,str) else (", ".join(str(v) for v in cmt) if isinstance(cmt,list) else "")
-                _add_row(lbl, key, "inf", None)
-                if cmt_str: rows[-1] = (rows[-1][0], clean_text(cmt_str)) + rows[-1][2:]
         for i in range(1, 4):
             for sec in ("haupt","bio","gesp","inf"):
                 slug   = f"{sec}_extra{i}"
@@ -1500,20 +1475,11 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
                "revita_detox","revita_chelate","revita_liver","revita_leakygut",
                "revita_infection","revita_joint","std_mito_energy","std_oxyvenierung",
                "std_schwermetalltest","std_procain_basen","std_artemisinin",
-               "std_perioperative","std_detox_standard","std_detox_maxi",
-               "std_aufbauinfusion","std_anti_aging","std_nerven_aufbau",
-               "std_leberentgiftung","std_anti_oxidantien","std_aminoinfusion",
-               "std_relax_infusion","single_vitamin_c","single_vitamin_b_komplex",
-               "single_vitamin_d","single_vitamin_b6_b12_folsaeure","single_vitamin_b3"]:
+               "std_perioperative","std_nerven_aufbau",
+               "std_anti_oxidantien","std_aminoinfusion",
+               "infektions_infusion"]:
         if ik in _inf:
             st.session_state[f"inf_{ik}_cb"] = bool(_inf[ik])
-    for wk in ["infektions_infusion_cb","immun_booster_cb","energetisierungsinfusion_cb",
-               "naehrstoffinfusion_cb","eisen_infusion_cb"]:
-        if wk in _inf: st.session_state[wk] = bool(_inf[wk])
-    for wk in ["infektions_infusion_inp","immun_booster_sel","energetisierungsinfusion_sel",
-               "naehrstoffinfusion_sel","eisen_infusion_inp"]:
-        base = wk.rsplit("_",1)[0]
-        if base in _inf: st.session_state[wk] = _inf[base]
     if "zusaetze" in _inf: st.session_state["zusaetze_select"] = _inf["zusaetze"]
 
     # Seed diagnostik urgency widget keys so switching patients resets the radio/comment
@@ -2278,15 +2244,26 @@ def main():
                             i_nacht = st.session_state.get(nacht_key, "")
                             i_com   = st.session_state.get(com_key,   "")
 
-                            # Gesamt-dosierung and Pro Einnahme: kept in session state, hidden from UI
-                            gd_val = i_gd
+                            # ── Gesamt-dosierung (hidden; re-enable by uncommenting cols[1] block) ──
+                            # gd_options = ["","1","2","3","4","5","6","7","8","9","10","12","14","16",
+                            #               "18","20","22","24","26","28","30","35","40","45","50","60",
+                            #               "70","80","90","100","120","150","180","200","250","300","400","500"]
+                            # gd_val = cols[1].selectbox("", gd_options,
+                            #     index=gd_options.index(i_gd) if i_gd in gd_options else 0,
+                            #     key=gd_key, label_visibility="collapsed", accept_new_options=True)
+                            gd_val = i_gd  # kept in DB; not shown in UI
 
                             dosage_presets = ["Kapseln","Lösung","Tabletten","Pulver","Tropfen","Sachet","Öl","Spray","Creme","Gel","Flüssig","Tee","Pflaster"]
                             sel_form = cols[1].selectbox("", dosage_presets,
                                 index=dosage_presets.index(i_form) if i_form in dosage_presets else 0,
                                 key=form_key, label_visibility="collapsed", accept_new_options=True)
 
-                            pe_val = i_pe
+                            # ── Pro Einnahme (hidden; re-enable by uncommenting cols[3] block) ──
+                            # pe_options = get_pro_Einnahme_options(sel_form)
+                            # pe_val = cols[3].selectbox("", pe_options,
+                            #     index=pe_options.index(i_pe) if i_pe in pe_options else 0,
+                            #     key=pe_key, label_visibility="collapsed", accept_new_options=True)
+                            pe_val = i_pe  # kept in DB; not shown in UI
 
                             dose_options = ["","1","2","3","4","5"]
                             nue_val  = cols[2].selectbox("", dose_options, index=dose_options.index(i_nue)   if i_nue   in dose_options else 0, key=nue_key,  label_visibility="collapsed")
@@ -2398,7 +2375,7 @@ def main():
             revita_immune        = _inf_row("RevitaImmune",        "revita_immune",        "Vitamin C, Zink, Selen, Magnesium, B-Vitamine")
             revita_immune_plus   = _inf_row("RevitaImmunePlus",    "revita_immune_plus",   "Hochdosiert: Vitamin C, Zink, Selen, Magnesium, B-Vitamine, Glutathion")
             revita_heal          = _inf_row("Revita Heal (2x)",    "revita_heal",          "Vitamin C, Zink, Arginin, Glutamin, B-Vitamine, Magnesium")
-            revita_bludder       = _inf_row("RevitaBludder",       "revita_bludder",       "Eisen, Vitamin B12, Folsäure, Vitamin C")
+            revita_bludder       = _inf_row("RevitaBladder",       "revita_bludder",       "Eisen, Vitamin B12, Folsäure, Vitamin C")
             revita_ferro         = _inf_row("RevitaFerro",         "revita_ferro",         "Ferinject (Eisen), Vitamin C")
             revita_energy        = _inf_row("RevitaEnergyBoost",   "revita_energy",        "Magnesium, B-Vitamine, Vitamin C, Coenzym Q10")
             revita_focus         = _inf_row("RevitaFocus",         "revita_focus",         "Magnesium, B-Vitamine, Vitamin C, Zink, Alpha-Liponsäure")
@@ -2444,77 +2421,16 @@ def main():
 
         with st.expander("Standard Infusionen", expanded=inf.get("_sec_standard_open", False)):
             _sched_header()
-            schwermetalltest = _inf_row("Schwermetalltest mit DMSA und Ca EDTA",            "std_schwermetalltest","Test mit DMSA und Ca EDTA")
+            schwermetalltest     = _inf_row("Schwermetalltest mit DMSA und Ca EDTA",         "std_schwermetalltest","Test mit DMSA und Ca EDTA")
             procain_basen, procain_2percent = _procain_row("Procain Baseninfusion mit Magnesium", "std_procain_basen","Procain Baseninfusion mit Magnesium")
-            artemisinin      = _inf_row("Artemisinin Infusion mit 2x Lysin",                "std_artemisinin",     "Artemisinin Infusion mit 2x Lysin")
-            perioperative    = _inf_row("Perioperative Infusion (3 Infusionen)",            "std_perioperative",   "Perioperative Infusion (3 Infusionen)")
-            detox_standard   = _inf_row("Detox-Infusion Standard",                          "std_detox_standard",  "Detox-Infusion Standard")
-            detox_maxi       = _inf_row("Detox-Infusion Maxi",                              "std_detox_maxi",      "Detox-Infusion Maxi")
-            aufbauinfusion   = _inf_row("Aufbauinfusion nach Detox",                        "std_aufbauinfusion",  "Aufbauinfusion nach Detox")
-            anti_aging       = _inf_row("Anti Aging Infusion komplett",                     "std_anti_aging",      "Anti Aging Infusion komplett")
-            nerven_aufbau    = _inf_row("Nerven Aufbau Infusion",                           "std_nerven_aufbau",   "Nerven Aufbau Infusion")
-            leberentgiftung  = _inf_row("Leberentgiftungsinfusion",                         "std_leberentgiftung", "Leberentgiftungsinfusion")
-            anti_oxidantien  = _inf_row("Anti-Oxidantien Infusion",                         "std_anti_oxidantien", "Anti-Oxidantien Infusion")
-            aminoinfusion    = _inf_row("Aminoinfusion leaky gut (5–10)",                   "std_aminoinfusion",   "Aminoinfusion leaky gut (5–10)")
-            relax_infusion   = _inf_row("Relax Infusion",                                   "std_relax_infusion",  "Relax Infusion")
+            artemisinin          = _inf_row("Artemisinin Infusion mit 2x Lysin",             "std_artemisinin",     "Artemisinin Infusion mit 2x Lysin")
+            perioperative        = _inf_row("Perioperative Infusion (3 Infusionen)",         "std_perioperative",   "Perioperative Infusion (3 Infusionen)")
+            nerven_aufbau        = _inf_row("Nerven Aufbau Infusion",                        "std_nerven_aufbau",   "Nerven Aufbau Infusion")
+            anti_oxidantien      = _inf_row("Anti-Oxidantien Infusion",                      "std_anti_oxidantien", "Anti-Oxidantien Infusion")
+            aminoinfusion        = _inf_row("Aminoinfusion leaky gut (5-10)",                "std_aminoinfusion",   "Aminoinfusion leaky gut (5-10)")
+            infektions_infusion  = _inf_row("Infektions-Infusion / H2O2",                   "infektions_infusion", "Infektions-Infusion / H2O2")
 
-        with st.expander("Weitere Angaben", expanded=inf.get("_sec_weitere_open", False)):
-            _sched_header()
-
-            def _wa_row(label, cb_key, text_key, text_opts=None, is_select=False, is_multi=False):
-                """Checkbox + optional widget, timing on right. Checked = goes to PDF."""
-                cols = st.columns(ROW_COLS)
-                with cols[0]:
-                    cb_c, wid_c = st.columns([2.0, 2.0])
-                    with cb_c:
-                        checked = st.checkbox(label, value=inf.get(cb_key, False), key=cb_key)
-                    with wid_c:
-                        if is_multi and text_opts:
-                            val = st.multiselect("", text_opts,
-                                default=inf.get(text_key, []) if isinstance(inf.get(text_key,[]),list) else [],
-                                key=text_key + "_sel",
-                                label_visibility="collapsed",
-                                disabled=not checked)
-                        elif is_select and text_opts:
-                            val = st.selectbox("", text_opts,
-                                index=text_opts.index(inf.get(text_key, text_opts[0])) if inf.get(text_key, "") in text_opts else 0,
-                                key=text_key + "_sel",
-                                label_visibility="collapsed",
-                                disabled=not checked)
-                        else:
-                            val = st.text_input("", value=inf.get(text_key, ""),
-                                key=text_key + "_inp",
-                                placeholder="Details...",
-                                label_visibility="collapsed",
-                                disabled=not checked)
-                infusion_schedule_data.update(
-                    _inline_timing(checked, text_key, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
-                return checked, val
-
-            _if_cb, infektions_infusion = _wa_row(
-                "Infektions-Infusion / H2O2", "infektions_infusion_cb", "infektions_infusion")
-            _ib_cb, immun_booster = _wa_row(
-                "Immun-Boosterung Typ", "immun_booster_cb", "immun_booster",
-                text_opts=["","Typ 1","Typ 2","Typ 3"], is_select=True)
-            _en_cb, energetisierungsinfusion = _wa_row(
-                "Energetisierungsinfusion mit", "energetisierungsinfusion_cb", "energetisierungsinfusion",
-                text_opts=["Vitamin B Shot","Q10 Boostershot"], is_multi=True)
-            _ns_cb, naehrstoffinfusion = _wa_row(
-                "Nährstoffinfusion mit", "naehrstoffinfusion_cb", "naehrstoffinfusion",
-                text_opts=["Glutathion","Alpha Liponsäure"], is_multi=True)
-            _ei_cb, eisen_infusion = _wa_row(
-                "Eisen Infusion (Ferinject)", "eisen_infusion_cb", "eisen_infusion")
-
-
-        with st.expander("Single Ingredients / Einzel", expanded=inf.get("_sec_single_open", False)):
-            _sched_header()
-            vitamin_c                = _inf_row("Hochdosis Vitamin C (g)",    "single_vitamin_c",               "Hochdosiertes Vitamin C")
-            vitamin_b_komplex        = _inf_row("Vit. B-Komplex",             "single_vitamin_b_komplex",       "Vitamin B-Komplex")
-            vitamin_d                = _inf_row("Vit. D",                     "single_vitamin_d",               "Vitamin D")
-            vitamin_b6_b12_folsaeure = _inf_row("Vit. B6/B12/Folsäure",      "single_vitamin_b6_b12_folsaeure","Vitamin B6, B12 und Folsäure")
-            vitamin_b3               = _inf_row("Vit. B3",                    "single_vitamin_b3",              "Vitamin B3")
-
-        with st.expander("Zusätze & Extras", expanded=inf.get("_sec_zusaetze_open", False)):
+        with st.expander("Extras", expanded=inf.get("_sec_zusaetze_open", False)):
             _extra_rows("inf", "inf", inf, patient["therapiebeginn"], patient["dauer"], infusion_schedule_data)
             zusaetze = st.multiselect("Zusätze auswählen",
                 ["Vit.B Komplex","Vit.B6/B12/Folsäure","Vit.D 300 kIE","Vit.B3","Biotin","Glycin",
@@ -2525,9 +2441,6 @@ def main():
         new_inf = {
             "inf_custom1_cb": inf_custom1_cb, "inf_custom1_text": inf_custom1_text,
             "inf_custom2_cb": inf_custom2_cb, "inf_custom2_text": inf_custom2_text,
-            "infektions_infusion_cb": _if_cb, "immun_booster_cb": _ib_cb,
-            "energetisierungsinfusion_cb": _en_cb, "naehrstoffinfusion_cb": _ns_cb,
-            "eisen_infusion_cb": _ei_cb,
             "revita_immune": revita_immune, "revita_immune_plus": revita_immune_plus,
             "revita_heal": revita_heal, "revita_bludder": revita_bludder,
             "revita_ferro": revita_ferro, "revita_energy": revita_energy,
@@ -2542,31 +2455,16 @@ def main():
             "std_mito_energy": mito_energy, "std_schwermetalltest": schwermetalltest,
             "std_procain_basen": procain_basen, "std_procain_basen_ml": procain_2percent,
             "std_artemisinin": artemisinin, "std_perioperative": perioperative,
-            "std_detox_standard": detox_standard, "std_detox_maxi": detox_maxi,
-            "std_aufbauinfusion": aufbauinfusion, "std_oxyvenierung": oxyvenierung,
-            "std_anti_aging": anti_aging, "std_nerven_aufbau": nerven_aufbau,
-            "std_leberentgiftung": leberentgiftung, "std_anti_oxidantien": anti_oxidantien,
-            "std_aminoinfusion": aminoinfusion, "std_relax_infusion": relax_infusion,
+            "std_oxyvenierung": oxyvenierung, "std_nerven_aufbau": nerven_aufbau,
+            "std_anti_oxidantien": anti_oxidantien, "std_aminoinfusion": aminoinfusion,
             # alias without std_ prefix for PDF lookup
             "mito_energy": mito_energy, "schwermetalltest": schwermetalltest,
             "procain_basen": procain_basen, "artemisinin": artemisinin,
-            "perioperative": perioperative, "detox_standard": detox_standard,
-            "detox_maxi": detox_maxi, "aufbauinfusion": aufbauinfusion,
-            "oxyvenierung": oxyvenierung, "anti_aging": anti_aging,
-            "nerven_aufbau": nerven_aufbau, "leberentgiftung": leberentgiftung,
-            "anti_oxidantien": anti_oxidantien, "aminoinfusion": aminoinfusion,
-            "relax_infusion": relax_infusion,
-            "infektions_infusion": infektions_infusion, "immun_booster": immun_booster,
-            "energetisierungsinfusion": energetisierungsinfusion,
-            "naehrstoffinfusion": naehrstoffinfusion, "eisen_infusion": eisen_infusion,
-            "single_vitamin_c": vitamin_c, "single_vitamin_b_komplex": vitamin_b_komplex,
-            "single_vitamin_d": vitamin_d,
-            "single_vitamin_b6_b12_folsaeure": vitamin_b6_b12_folsaeure,
-            "single_vitamin_b3": vitamin_b3,
-            # alias without single_ for PDF
-            "vitamin_c": vitamin_c, "vitamin_b_komplex": vitamin_b_komplex,
-            "vitamin_d": vitamin_d, "vitamin_b6_b12_folsaeure": vitamin_b6_b12_folsaeure,
-            "vitamin_b3": vitamin_b3, "zusaetze": zusaetze,
+            "perioperative": perioperative, "oxyvenierung": oxyvenierung,
+            "nerven_aufbau": nerven_aufbau, "anti_oxidantien": anti_oxidantien,
+            "aminoinfusion": aminoinfusion,
+            "infektions_infusion": infektions_infusion,
+            "zusaetze": zusaetze,
         }
         new_inf.update(infusion_schedule_data)
         st.session_state.infusion_data = new_inf
