@@ -444,6 +444,8 @@ def _parse_saved_date(val, fallback):
 # INLINE TIMING HELPERS
 # Column layout: [label | Wo.Start(+4W btn) | Wo.Ende(+12W btn) | Häufigkeit | Von | Bis]
 ROW_COLS = [2.5, 0.38, 0.38, 0.55, 0.55, 0.9, 1.0, 1.0]
+# Infusion rows add a dedicated Kommentar column (9th)
+INF_ROW_COLS = [2.2, 0.35, 0.35, 0.5, 0.5, 0.85, 0.95, 0.95, 1.0]
 # Diagnostik section uses a different layout: [label | Zeitpunkt | Kommentar]
 DIAG_COLS = [3.5, 2.0, 2.5]
 
@@ -462,6 +464,23 @@ def _sched_header():
     h[5].markdown(H.format("Häufigkeit"),     unsafe_allow_html=True)
     h[6].markdown(H.format("Von&nbsp;Datum"), unsafe_allow_html=True)
     h[7].markdown(H.format("Bis&nbsp;Datum"), unsafe_allow_html=True)
+
+
+def _inf_sched_header():
+    """Header for infusion rows — includes Kommentar as 9th column."""
+    H = ("<div style='font-size:11px;font-weight:700;color:rgb(38,96,65);"
+         "text-transform:uppercase;letter-spacing:.5px;padding:4px 2px 3px 2px;"
+         "border-bottom:2px solid rgba(38,96,65,.2);white-space:nowrap;'>{}</div>")
+    h = st.columns(INF_ROW_COLS)
+    h[0].markdown(H.format("&nbsp;"),         unsafe_allow_html=True)
+    h[1].markdown(H.format("4W"),             unsafe_allow_html=True)
+    h[2].markdown(H.format("12W"),            unsafe_allow_html=True)
+    h[3].markdown(H.format("Wo.&nbsp;Start"), unsafe_allow_html=True)
+    h[4].markdown(H.format("Wo.&nbsp;Ende"),  unsafe_allow_html=True)
+    h[5].markdown(H.format("Häufigkeit"),     unsafe_allow_html=True)
+    h[6].markdown(H.format("Von&nbsp;Datum"), unsafe_allow_html=True)
+    h[7].markdown(H.format("Bis&nbsp;Datum"), unsafe_allow_html=True)
+    h[8].markdown(H.format("Kommentar"),      unsafe_allow_html=True)
 
 
 def _diag_header():
@@ -741,6 +760,15 @@ class PDF(FPDF):
         self.set_text_color(0, 0, 0)
 
 
+# =========================================================
+# PDF  — FIXED VERSION
+# Changes:
+#   1. Hinweis moved to BELOW Kontrolltermine (before table)
+#   2. "Vorgeschl. Datum" column removed from all PDFs
+#   3. No extra vertical gap between section-divider rows and data rows
+#   4. One continuous uninterrupted table (title → data, no break)
+# =========================================================
+
 def generate_pdf(patient, supplements, tab_name="NEM"):
     title_map = {
         "NEM": "THERAPIEKONZEPT - NEM",
@@ -762,8 +790,8 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         for src, dst in [('•','-'),('–','-'),('—','-'),('−','-')]:
             text = text.replace(src, dst)
         return text
-        return text
 
+    # ── Patient header ──────────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(35, 6, "Vor- und Nachname:", 0, 0)
     pdf.set_font("Helvetica", "", 10)
@@ -815,10 +843,10 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
     pdf.multi_cell(0, 5, clean_text(patient.get("diagnosen", "") or "-"), 0, "L")
     pdf.ln(3)
 
+    # ── Kontrolltermine ──────────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 6, "Kontrolltermine:", 0, 1)
     pdf.set_font("Helvetica", "", 10)
-    # Register DejaVuSans for checkmark character (Unicode ✔ U+2714)
     _dejavu_registered = getattr(pdf, "_dejavu_registered", False)
     if not _dejavu_registered and os.path.exists("DejaVuSans.ttf"):
         try:
@@ -835,7 +863,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         for part in kt_parts:
             if _dejavu_registered:
                 pdf.set_font("DejaVu", "", 10)
-                pdf.cell(6, 5, "✔", 0, 0)
+                pdf.cell(6, 5, "\u2714", 0, 0)
                 pdf.set_font("Helvetica", "", 10)
             else:
                 pdf.cell(6, 5, "OK", 0, 0)
@@ -848,7 +876,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         pdf.set_font("Helvetica", "", 10)
     pdf.ln(2)
 
-    # ── Therapie-Fortschritt (shown below Kontrolltermine, before section header) ──
+    # ── Therapie-Fortschritt ─────────────────────────────────────────────────
     if tab_name in ("THERAPIEPLAN", "INFUSIONSTHERAPIE", "NEM"):
         import datetime as _dt2
         tb_raw = patient.get("therapiebeginn")
@@ -883,31 +911,38 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             pdf.ln(2)
     pdf.ln(1)
 
-    # ── Hinweis box (shown after Therapie-Fortschritt, before section tables) ──
-    if tab_name in ("THERAPIEPLAN", "INFUSIONSTHERAPIE"):
+    # =========================================================
+    # NEM TABLE
+    # =========================================================
+    if tab_name == "NEM" and isinstance(supplements, list):
+        table_width = 277
+
+        # ── HINWEIS (moved here, below Kontrolltermine / progress, above table) ──
         pdf.set_fill_color(245, 250, 246)
         pdf.set_draw_color(38, 96, 65)
         pdf.set_font("Helvetica", "I", 8)
         pdf.set_text_color(60, 100, 70)
-        note = ("Hinweis: Die angegebenen Termine sind Richtwerte. "
-                "Die Reihenfolge der Massnahmen ist wichtiger als der genaue Zeitpunkt. "
-                "Bitte besprechen Sie Anpassungen mit Ihrem Arzt.")
-        pdf.multi_cell(0, 5, note, border=1, align="L", fill=True)
+        pdf.multi_cell(0, 5,
+            "Hinweis: Die angegebenen Termine sind Richtwerte. "
+            "Die Reihenfolge der Massnahmen ist wichtiger als der genaue Zeitpunkt. "
+            "Bitte besprechen Sie Anpassungen mit Ihrem Arzt.",
+            border=1, align="L", fill=True)
         pdf.set_text_color(0, 0, 0)
-        pdf.ln(3)
+        pdf.ln(2)
 
-    if tab_name == "NEM" and isinstance(supplements, list):
-        table_width = 277
+        # ── Table title banner ───────────────────────────────────────────────
         pdf.set_fill_color(38, 96, 65)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(table_width, 8, "NAHRUNGSERGÄNZUNGSMITTEL (NEM) VO", 0, 1, "L", True)
+        pdf.cell(table_width, 8, "NAHRUNGSERGANZUNGSMITTEL (NEM) VO", 0, 1, "L", True)
+        pdf.set_text_color(0, 0, 0)
 
-        headers = ["Supplement","Darreichungsform",
-                   "Nüchtern","Morgens","Mittags","Abends","Nachts","Kommentar"]
+        headers = ["Supplement", "Darreichungsform",
+                   "Nuchtern", "Morgens", "Mittags", "Abends", "Nachts", "Kommentar"]
         base_widths = [78, 38, 15, 15, 15, 15, 15]
         widths = base_widths + [table_width - sum(base_widths)]
 
+        # ── Column headers (immediately after title, no gap) ─────────────────
         pdf.set_fill_color(38, 96, 65)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", "B", 8)
@@ -921,11 +956,11 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             cells = [
                 strip_dosage(clean_text(s.get("name", ""))),
                 clean_text(s.get("Darreichungsform", "")),
-                f"{clean_text(s.get('Nüchtern',''))}x" if s.get("Nüchtern","").strip() else "",
-                f"{clean_text(s.get('Morgens',''))}x"  if s.get("Morgens","").strip()  else "",
-                f"{clean_text(s.get('Mittags',''))}x"  if s.get("Mittags","").strip()  else "",
-                f"{clean_text(s.get('Abends',''))}x"   if s.get("Abends","").strip()   else "",
-                f"{clean_text(s.get('Nachts',''))}x"   if s.get("Nachts","").strip()   else "",
+                f"{clean_text(s.get('Nuchtern',''))}x"  if s.get("Nuchtern","").strip()  else "",
+                f"{clean_text(s.get('Morgens',''))}x"   if s.get("Morgens","").strip()   else "",
+                f"{clean_text(s.get('Mittags',''))}x"   if s.get("Mittags","").strip()   else "",
+                f"{clean_text(s.get('Abends',''))}x"    if s.get("Abends","").strip()    else "",
+                f"{clean_text(s.get('Nachts',''))}x"    if s.get("Nachts","").strip()    else "",
                 clean_text(s.get("Kommentar", ""))
             ]
             line_height = 5
@@ -939,12 +974,12 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                 pdf.add_page()
                 pdf.set_fill_color(38, 96, 65)
                 pdf.set_text_color(255, 255, 255)
-                pdf.set_font("Helvetica", "B", 11)
+                pdf.set_font("Helvetica", "B", 8)
                 for w, h in zip(widths, headers):
                     pdf.cell(w, 8, h, 1, 0, "C", True)
                 pdf.ln()
                 pdf.set_text_color(0, 0, 0)
-                pdf.set_font("Helvetica", "", 10)
+                pdf.set_font("Helvetica", "", 9)
 
             start_x, start_y = pdf.get_x(), pdf.get_y()
             for i, (cell, width) in enumerate(zip(cells, widths)):
@@ -958,96 +993,35 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                     pdf.cell(width, row_height, cell, 1, 0, align)
             pdf.set_xy(start_x, start_y + row_height)
 
+    # =========================================================
+    # THERAPIEPLAN / INFUSIONSTHERAPIE TABLE
+    # =========================================================
     elif tab_name in ("THERAPIEPLAN", "INFUSIONSTHERAPIE") and isinstance(supplements, dict):
         title_text = "THERAPIEPLAN" if tab_name == "THERAPIEPLAN" else "INFUSIONSTHERAPIE"
+
+        # ── HINWEIS (moved here, below Kontrolltermine / progress, above table) ──
+        pdf.set_fill_color(245, 250, 246)
+        pdf.set_draw_color(38, 96, 65)
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(60, 100, 70)
+        pdf.multi_cell(0, 5,
+            "Hinweis: Die angegebenen Termine sind Richtwerte. "
+            "Die Reihenfolge der Massnahmen ist wichtiger als der genaue Zeitpunkt. "
+            "Bitte besprechen Sie Anpassungen mit Ihrem Arzt.",
+            border=1, align="L", fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(2)
+
+        # ── Table title banner ───────────────────────────────────────────────
         pdf.set_font("Helvetica", "B", 14)
         pdf.set_fill_color(38, 96, 65)
         pdf.set_text_color(255, 255, 255)
         pdf.cell(0, 10, title_text, 0, 1, "C", True)
-        pdf.ln(5)
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Helvetica", "", 10)
 
-        label_mapping = {
-            "zaehne": "Überprüfung Zähne/Kieferknochen (OPG/DVT)",
-            "zaehne_zu_pruefen": "Zähne zu überprüfen (OPG/DVT)",
-            "darm_biofilm": "Darm - Biofilmentfernung (Express-Darmkur 4 Tageskur)",
-            "darmsanierung": "Darmsanierung nach Paracelsus Klinik",
-            "darmsanierung_dauer": "Darmsanierung Dauer",
-            "hydrocolon": "Hydrocolon (Darmspülung) 2x, Abstand 14 Tage",
-            "parasiten": "Parasitenbehandlung mit Vermox (3 Tage)",
-            "parasiten_bio": "Biologisches Parasitenprogramm",
-            "leberdetox": "Leberdetox nach Paracelsus Klinik",
-            "nierenprogramm": "Nierenprogramm nach Dr. Clark (4 Wochen)",
-            "infektion_bakt": "Infektionsbehandlung Bakterien",
-            "infektion_virus": "Infektionsbehandlung Viren",
-            "ausleitung_inf": "Schwermetallausleitung Infusion",
-            "ausleitung_oral": "Schwermetallausleitung oral",
-            "mikronaehrstoffe": "Mikronährstoffe (NEM-Verordnung)",
-            "infusionsbehandlung": "Infusionstherapie",
-            "neuraltherapie": "Neuraltherapie",
-            "eigenblut": "Eigenbluttherapie",
-            "ozontherapie": "Ozontherapie",
-            "bio_isopath": "Biologische Isopathische Therapie",
-            "timewaver_freq": "TimeWaver Frequency Behandlung",
-            "ernaehrung": "Ernährungsberatung",
-            "hypnose": "Hypnosetherapie",
-            "yager": "Yagertherapie",
-            "aethetisch": "Ästhetische Behandlung",
-            "medikamente_text": "Medikamentenverordnung",
-            "akupunktur": "Akupunktur",
-            "homoeopathie": "Homöopathie (Anna)",
-            "bioresonanz": "Bioresonanz (Anna)",
-            "lowcarb": "Low Carb Ernährung",
-            "fasten": "Intermittierendes Fasten",
-            "krebsdiaet": "Krebs Diät",
-            "ketogene": "Ketogene Ernährung",
-            "basisch": "Basische Ernährung",
-            "naehrstoff_ausgleich": "Nährstoffmängel ausgleichen",
-            "therapie_sonstiges": "Sonstiges",
-            "energie_behandlungen": "Energiebehandlungen bei Marie",
-            "zwischengespraech_4": "Zwischengespräch nach 4 Wochen",
-            "zwischengespraech_8": "Zwischengespräch nach 8 Wochen",
-            "lab_imd": "IMD", "lab_mmd": "MMD", "lab_nextgen": "NextGen Onco",
-            "lab_sonstiges": "Sonstiges (Labor)",
-            "analyse_bewegungsapparat": "Analyse Bewegungsapparat (Martin)",
-            "schwermetalltest_tp": "Schwermetalltest mit DMSA und Ca EDTA",
-            "revita_immune": "RevitaImmune", "revita_immune_plus": "RevitaImmunePlus",
-            "revita_heal": "Revita Heal (2x)", "revita_bludder": "RevitaBladder",
-            "revita_ferro": "RevitaFerro", "revita_energy": "RevitaEnergyBoost",
-            "revita_focus": "RevitaFocus", "revita_nad": "RevitaNAD+",
-            "revita_relax": "RevitaRelax", "revita_fit": "RevitaFit",
-            "revita_hangover": "RevitaHangover", "revita_beauty": "RevitaBeauty",
-            "revita_antiaging": "RevitaAnti-Aging", "revita_detox": "RevitaDetox",
-            "revita_chelate": "RevitaChelate", "revita_liver": "RevitaLiver",
-            "revita_leakygut": "RevitaLeaky-gut", "revita_infection": "RevitaInfection",
-            "revita_joint": "RevitaJoint",
-            "mito_energy": "Mito-Energy Behandlung",
-            "procain_basen": "Procain Baseninfusion mit Magnesium",
-            "artemisinin": "Artemisinin Infusion mit 2x Lysin",
-            "perioperative": "Perioperative Infusion (3 Infusionen)",
-            "nerven_aufbau": "Nerven Aufbau Infusion",
-            "anti_oxidantien": "Anti-Oxidantien Infusion",
-            "aminoinfusion": "Aminoinfusion leaky gut",
-            "zusaetze": "Zusätze",
-            "infektions_infusion": "Infektions-Infusion / H2O2",
-            "oxyvenierung": "Oxyvenierung",
-            "schwermetalltest": "Schwermetalltest DMSA/Ca EDTA",
-        }
+        # ── Helper functions ─────────────────────────────────────────────────
 
-
-        # ═══════════════════════════════════════════════════════════
-        # Build the prescription table.
-        # A row is PRESCRIBED if:
-        #   - bool key is True  (e.g. zaehne=True)
-        #   - OR  _cb key is True (e.g. infektion_bakt_cb=True, lab_imd_cb=True)
-        #   - OR  infusion checkbox key is True (inf_revita_immune_cb from session but
-        #         stored as revita_immune=True in inf data)
-        # For each prescribed item we look up its timing keys and comment.
-        # Col order: Therapie | Wo.von | Wo.bis | Von | Bis | Häufigkeit | Kommentar
-        # ═══════════════════════════════════════════════════════════
-
-        # All suffix families we skip when scanning for "is this prescribed?"
         SKIP_SFXS = ("_w_start","_w_end","_date_start","_date_end","_freq",
                      "_text","_comment","_detail","_dauer","_zu_pruefen",
                      "_noreen","_martin","_miro","_typ","_botox","_prp",
@@ -1062,11 +1036,14 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                 if k.endswith(s) or k == s.lstrip("_"): return True
             return False
 
-        # Helper: find timing for a given base slug
         def _timing(slug, prefix):
-            """Returns (ws, we, ds, de, fr) strings for a slug."""
-            # Try all prefix combinations including std_ variants
-            for kp in (prefix, f"inf_std", "diag","haupt","bio","gesp","inf",""):
+            def _fmtd(v):
+                if isinstance(v, date): return _fmt_dt(v)
+                if isinstance(v, str) and v:
+                    try: return _fmt_dt(date.fromisoformat(v))
+                    except: return v
+                return ""
+            for kp in (prefix, "inf_std", "diag","haupt","bio","gesp","inf",""):
                 base = f"{kp}_{slug}" if kp else slug
                 ws = supplements.get(f"{base}_w_start","")
                 if ws and str(ws) not in ("", "0"):
@@ -1074,10 +1051,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                     ds  = supplements.get(f"{base}_date_start","")
                     de  = supplements.get(f"{base}_date_end","")
                     fr  = supplements.get(f"{base}_freq","")
-                    ds_s = _fmt_dt(ds) if isinstance(ds, date) else (str(ds) if ds else "")
-                    de_s = _fmt_dt(de) if isinstance(de, date) else (str(de) if de else "")
-                    return str(ws), str(we), ds_s, de_s, str(fr) if fr else ""
-            # Also try with std_ slug prefix
+                    return str(ws), str(we), _fmtd(ds), _fmtd(de), str(fr) if fr else ""
             std_slug = f"std_{slug}"
             for kp in ("inf",):
                 base = f"{kp}_{std_slug}"
@@ -1087,17 +1061,12 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                     ds  = supplements.get(f"{base}_date_start","")
                     de  = supplements.get(f"{base}_date_end","")
                     fr  = supplements.get(f"{base}_freq","")
-                    ds_s = _fmt_dt(ds) if isinstance(ds, date) else (str(ds) if ds else "")
-                    de_s = _fmt_dt(de) if isinstance(de, date) else (str(de) if de else "")
-                    return str(ws), str(we), ds_s, de_s, str(fr) if fr else ""
+                    return str(ws), str(we), _fmtd(ds), _fmtd(de), str(fr) if fr else ""
             return "", "", "", "", ""
 
-        # Build rows: [(label, comment, ws, we, ds, de, fr), ...]
         rows = []
         seen_labels = set()
 
-        # Canonical ordered list of prescribed items
-        # Check: boolean True, or _cb True
         def _prescribed(key):
             v = supplements.get(key)
             if v is True: return True
@@ -1115,7 +1084,6 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                 cv = supplements.get(comment_key, "")
                 if isinstance(cv, str): comment = cv
             if not comment:
-                # auto-fallback: try {slug}_comment and std_{slug}_comment
                 for ck in (f"{slug}_comment", f"std_{slug}_comment"):
                     cv = supplements.get(ck, "")
                     if isinstance(cv, str) and cv:
@@ -1124,8 +1092,8 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             rows.append((clean_text(lbl), clean_text(comment),
                          ws, we, ds, de, fr))
 
-        # ── Diagnostik items (THERAPIEPLAN only) — urgency + comment, no weeks ──
-        diag_rows = []  # [(label, urgency_text, comment)]
+        # ── Diagnostik rows (THERAPIEPLAN only) — urgency + comment, no week cols ──
+        diag_rows = []
         if tab_name == "THERAPIEPLAN":
             for key, lbl in [
                 ("zaehne",                   "Ueberpruefung Zaehne/Kieferknochen (OPG/DVT)"),
@@ -1148,9 +1116,8 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                     cmt = clean_text(supplements.get(f"{key}_urgency_comment", ""))
                     diag_rows.append((clean_text(label_full), urg, cmt))
 
-        # ── Therapie items (both tabs) — with week timing ──
+        # ── Therapie rows ────────────────────────────────────────────────────
         if tab_name == "THERAPIEPLAN":
-            # Haupttherapien
             for key, lbl in [
                 ("darm_biofilm","Darm - Biofilmentfernung"),
                 ("darmsanierung","Darmsanierung nach Paracelsus Klinik"),
@@ -1176,7 +1143,6 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             ]:
                 if supplements.get(key + "_cb", False):
                     _add_row(lbl, key, "haupt", key)
-            # Bio & Komplementäre Therapien
             for key, lbl in [
                 ("bio_isopath","Biologische Isopathische Therapie"),
                 ("akupunktur","Akupunktur"),
@@ -1223,7 +1189,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                 if _prescribed(key):
                     _add_row(lbl, key, "gesp")
 
-        # INFUSIONSTHERAPIE items
+        # INFUSIONSTHERAPIE rows
         for key, lbl in [
             ("revita_immune","RevitaImmune"),("revita_immune_plus","RevitaImmunePlus"),
             ("revita_heal","Revita Heal (2x)"),("revita_bludder","RevitaBladder"),
@@ -1259,44 +1225,86 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                 if txt and str(txt).strip() and cb_val:
                     _add_row(str(txt), slug, sec)
 
-        TW = 277  # landscape A4 printable width
+        TW = 277   # landscape A4 printable width
         LH = 5
 
-        def _render_row(cells, widths):
-            """Render one data row, wrapping long cells."""
+        # ── 3-column layout: Verordnung | Zeitpunkt/Häufigkeit | Kommentar ──
+        # "Vorgeschl. Datum" column is REMOVED
+        tw = [110, 60, TW - 170]
+        th = ["Verordnung / Untersuchung", "Zeitpunkt / Haeufigkeit", "Kommentar"]
+
+        def _render_col_headers():
+            pdf.set_fill_color(38, 96, 65)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", "B", 8)
+            for h, w in zip(th, tw):
+                pdf.cell(w, 6, h, 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Helvetica", "", 8)
+
+        def _render_row_t(cells):
+            """Render one data row. Re-renders col headers on page break."""
             def _nlines(txt, w):
                 return max(1, int(pdf.get_string_width(txt) / max(1, w - 4)) + 1) if txt else 1
-            n = max(_nlines(c, w) for c, w in zip(cells, widths))
+            n = max(_nlines(c, w) for c, w in zip(cells, tw))
             rh = LH * n
             if pdf.get_y() + rh > pdf.page_break_trigger:
                 pdf.add_page()
-            sx2, sy2 = pdf.get_x(), pdf.get_y()
-            for cell, width in zip(cells, widths):
+                _render_col_headers()
+            sx, sy = pdf.get_x(), pdf.get_y()
+            for cell, width in zip(cells, tw):
                 x = pdf.get_x()
                 if cell and pdf.get_string_width(cell) > (width - 4):
-                    pdf.set_xy(x, sy2)
+                    pdf.set_xy(x, sy)
                     pdf.multi_cell(width, LH, cell, 1, 'L')
-                    pdf.set_xy(x + width, sy2)
+                    pdf.set_xy(x + width, sy)
                 else:
                     pdf.cell(width, rh, cell, 1, 0, 'L')
-            pdf.set_xy(sx2, sy2 + rh)
+            pdf.set_xy(sx, sy + rh)
 
-        # ── Diagnostik section (THERAPIEPLAN only) ──
-        if diag_rows:
-            pdf.set_fill_color(38, 96, 65); pdf.set_text_color(255, 255, 255)
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(TW, 7, "DIAGNOSTIK & UEBERPRUEFUNGEN", 0, 1, "L", True)
-            pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "B", 8)
-            dw = [110, 80, TW - 190]
-            for h, w in zip(["Untersuchung","Zeitpunkt","Kommentar"], dw):
-                pdf.cell(w, 6, h, 1, 0, "C", False)
-            pdf.ln()
+        def _section_divider(title):
+            """
+            Light-green merged-cell section divider row — part of the
+            continuous table (no extra vertical space before or after).
+            Re-renders col headers on page break.
+            """
+            if pdf.get_y() + 11 > pdf.page_break_trigger:
+                pdf.add_page()
+                _render_col_headers()
+            pdf.set_fill_color(220, 235, 225)
+            pdf.set_text_color(38, 96, 65)
+            pdf.set_font("Helvetica", "B", 8)
+            # Full-width merged cell — no ln gap, sits flush with rows above/below
+            pdf.cell(TW, 6, f"  {title}", 1, 1, "L", True)
+            pdf.set_text_color(0, 0, 0)
             pdf.set_font("Helvetica", "", 8)
-            for lbl, urg, cmt in diag_rows:
-                _render_row([lbl, urg, cmt], dw)
-            pdf.ln(4)
 
-        # ── Week-grouped therapy rows ──
+        def _week_label(ws_i, we_i, ds, de):
+            wk_txt = f"Woche {ws_i}" if ws_i == we_i else f"Woche {ws_i}-{we_i}"
+            def _fmtd2(v):
+                if isinstance(v, date): return _fmt_dt(v)
+                if isinstance(v, str) and v:
+                    try: return _fmt_dt(date.fromisoformat(v))
+                    except: return v
+                return ""
+            ds_s, de_s = _fmtd2(ds), _fmtd2(de)
+            if ds_s and de_s:  wk_txt += f"  (ca. {ds_s} - {de_s})"
+            elif ds_s:          wk_txt += f"  (ab ca. {ds_s})"
+            return clean_text(wk_txt)
+
+        # ── Render column headers once right after the title banner ──────────
+        if pdf.get_y() + 6 > pdf.page_break_trigger:
+            pdf.add_page()
+        _render_col_headers()
+
+        # ── Diagnostik section ───────────────────────────────────────────────
+        if diag_rows:
+            _section_divider("DIAGNOSTIK & UEBERPRUEFUNGEN")
+            for lbl, urg, cmt in diag_rows:
+                _render_row_t([lbl, urg, cmt])
+
+        # ── Week-grouped therapy rows ────────────────────────────────────────
         from collections import defaultdict
         week_groups = defaultdict(list)
         no_week_rows = []
@@ -1312,69 +1320,18 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             else:
                 no_week_rows.append(row)
 
-        # Col widths for therapy table: Therapie | Häufigkeit | Vorgeschl. Datum | Kommentar
-        tw = [110, 28, 55, TW - 193]
-        th = ["Therapie / Verordnung", "Haeufigkeit", "Vorgeschl. Datum", "Kommentar"]
+        for (ws_i, we_i), grp in sorted(week_groups.items()):
+            _, _, _, _, ds0, de0, _ = grp[0]
+            _section_divider(_week_label(ws_i, we_i, ds0, de0))
+            for lbl, comment, _, _, _, _, fr in grp:
+                _render_row_t([lbl, fr, comment])
 
-        _table_started = [False]  # track whether the column header row has been rendered
+        if no_week_rows:
+            _section_divider("Weitere Angaben (kein Zeitplan)")
+            for lbl, comment, _, _, _, _, fr in no_week_rows:
+                _render_row_t([lbl, fr, comment])
 
-        def _render_col_headers():
-            pdf.set_fill_color(38, 96, 65); pdf.set_text_color(255, 255, 255)
-            pdf.set_font("Helvetica", "B", 8)
-            for h, w in zip(th, tw):
-                pdf.cell(w, 6, h, 1, 0, "C", True)
-            pdf.ln()
-            pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "", 8)
-
-        def _therapy_section_header(title):
-            if not _table_started[0]:
-                # First group: need space for col headers (6) + group divider (6) + 1 row (5)
-                if pdf.get_y() + 17 > pdf.page_break_trigger:
-                    pdf.add_page()
-                _render_col_headers()
-                _table_started[0] = True
-            else:
-                # Subsequent groups: need space for divider (6) + 1 row (5)
-                if pdf.get_y() + 11 > pdf.page_break_trigger:
-                    pdf.add_page()
-                    _render_col_headers()  # re-render headers at top of new page
-            # Light green week-group divider row (no column sub-headers)
-            pdf.set_fill_color(220, 235, 225)
-            pdf.set_text_color(38, 96, 65)
-            pdf.set_font("Helvetica", "B", 8)
-            pdf.cell(TW, 6, f"  {title}", 1, 1, "L", True)
-            pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "", 8)
-
-        def _week_label(ws_i, we_i, ds, de):
-            if ws_i == we_i:
-                wk_txt = f"Woche {ws_i}"
-            else:
-                wk_txt = f"Woche {ws_i}-{we_i}"
-            ds_s = _fmt_dt(ds) if isinstance(ds, date) else (str(ds) if ds else "")
-            de_s = _fmt_dt(de) if isinstance(de, date) else (str(de) if de else "")
-            if ds_s and de_s:
-                wk_txt += f"  (ca. {ds_s} - {de_s})"
-            elif ds_s:
-                wk_txt += f"  (ab ca. {ds_s})"
-            return clean_text(wk_txt)
-
-        any_therapy = bool(week_groups) or bool(no_week_rows)
-        if any_therapy:
-            # Render sorted week groups — one continuous table, no gaps
-            for (ws_i, we_i), grp in sorted(week_groups.items()):
-                _, _, _, _, ds0, de0, _ = grp[0]
-                section_title = _week_label(ws_i, we_i, ds0, de0)
-                _therapy_section_header(section_title)
-                for lbl, comment, _, _, ds, de, fr in grp:
-                    date_txt = f"{ds} - {de}" if (ds and de and ds != de) else (ds or de or "")
-                    _render_row([lbl, fr, date_txt, comment], tw)
-            # Rows with no week assigned
-            if no_week_rows:
-                _therapy_section_header("Weitere Angaben (kein Zeitplan)")
-                for lbl, comment, _, _, ds, de, fr in no_week_rows:
-                    date_txt = f"{ds} - {de}" if (ds and de and ds != de) else (ds or de or "")
-                    _render_row([lbl, fr, date_txt, comment], tw)
-        elif not diag_rows:
+        if not diag_rows and not week_groups and not no_week_rows:
             pdf.set_font("Helvetica", "", 9)
             pdf.cell(0, 6, "- Keine Verordnungen eingetragen", 0, 1)
 
@@ -1386,7 +1343,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         pdf.ln(5)
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Helvetica", "", 10)
-        pdf.cell(0, 6, "Keine Daten verfügbar.", 0, 1)
+        pdf.cell(0, 6, "Keine Daten verfugbar.", 0, 1)
 
     return bytes(pdf.output(dest="S"))
 
@@ -2376,10 +2333,10 @@ def main():
         inf = st.session_state.infusion_data
 
         def _inf_row(label, key_prefix, tooltip, default_checked=False):
-            """Infusion checkbox with label+tooltip on left, comment in middle, timing on right."""
-            cols = st.columns(ROW_COLS)
+            """Infusion checkbox with label+tooltip on left, timing in cols 1-7, comment in col 8."""
+            cols = st.columns(INF_ROW_COLS)
             with cols[0]:
-                cb_cols = st.columns([0.06, 0.57, 0.37])
+                cb_cols = st.columns([0.07, 0.93])
                 with cb_cols[0]:
                     value = st.checkbox("", value=inf.get(key_prefix, default_checked),
                         key=f"inf_{key_prefix}_cb", label_visibility="collapsed")
@@ -2389,18 +2346,18 @@ def main():
                         f'<span style="font-size:14px;font-family:DM Sans,sans-serif;">{label}</span>' +
                         f'<span class="info-icon" data-tooltip="{tooltip}">ⓘ</span></div>',
                         unsafe_allow_html=True)
-                with cb_cols[2]:
-                    comment = st.text_input("", value=inf.get(f"{key_prefix}_comment", ""),
-                        key=f"inf_{key_prefix}_comment_inp",
-                        placeholder="Kommentar...", label_visibility="collapsed", disabled=not value)
             infusion_schedule_data.update(
                 _inline_timing(value, key_prefix, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
+            with cols[8]:
+                comment = st.text_input("", value=inf.get(f"{key_prefix}_comment", ""),
+                    key=f"inf_{key_prefix}_comment_inp",
+                    placeholder="Kommentar...", label_visibility="collapsed", disabled=not value)
             infusion_schedule_data[f"{key_prefix}_comment"] = comment
             return value
 
         def _procain_row(label, key_prefix, tooltip):
             ml_key = f"{key_prefix}_ml"
-            cols = st.columns(ROW_COLS)
+            cols = st.columns(INF_ROW_COLS)
             with cols[0]:
                 cb_cols = st.columns([0.07, 0.6, 0.33])
                 with cb_cols[0]:
@@ -2423,7 +2380,7 @@ def main():
         st.markdown('<div class="green-section-header">Infusionstherapie</div>', unsafe_allow_html=True)
 
         with st.expander("RevitaClinic Infusionen", expanded=inf.get("_sec_revita_open", True)):
-            _sched_header()
+            _inf_sched_header()
             revita_immune        = _inf_row("RevitaImmune",        "revita_immune",        "Vitamin C, Zink, Selen, Magnesium, B-Vitamine")
             revita_immune_plus   = _inf_row("RevitaImmunePlus",    "revita_immune_plus",   "Hochdosiert: Vitamin C, Zink, Selen, Magnesium, B-Vitamine, Glutathion")
             revita_heal          = _inf_row("Revita Heal (2x)",    "revita_heal",          "Vitamin C, Zink, Arginin, Glutamin, B-Vitamine, Magnesium")
@@ -2445,7 +2402,7 @@ def main():
             revita_joint         = _inf_row("RevitaJoint",         "revita_joint",         "Vitamin C, Magnesium, Zink, Mangan, B-Vitamine")
 
         with st.expander("Sonstiges", expanded=inf.get("_sec_sonstiges_open", False)):
-            _sched_header()
+            _inf_sched_header()
             mito_energy      = _inf_row("Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)", "std_mito_energy",     "Mito-Energy Behandlung mit Wirkbooster")
             oxyvenierung     = _inf_row("Oxyvenierung (10–40 ml, 10er Serie)",              "std_oxyvenierung",    "Oxyvenierung (10–40 ml, 10er Serie)")
 
@@ -2454,7 +2411,7 @@ def main():
                 key_cb   = f"inf_custom{idx}_cb"
                 key_text = f"inf_custom{idx}_text"
                 key_slug = f"inf_custom{idx}"
-                cols = st.columns(ROW_COLS)
+                cols = st.columns(INF_ROW_COLS)
                 with cols[0]:
                     cb_c, txt_c = st.columns([0.07, 0.93])
                     with cb_c:
@@ -2472,7 +2429,7 @@ def main():
             inf_custom2_cb, inf_custom2_text = _inf_custom_row(2)
 
         with st.expander("Standard Infusionen", expanded=inf.get("_sec_standard_open", False)):
-            _sched_header()
+            _inf_sched_header()
             schwermetalltest     = _inf_row("Schwermetalltest mit DMSA und Ca EDTA",         "std_schwermetalltest","Test mit DMSA und Ca EDTA")
             procain_basen, procain_2percent = _procain_row("Procain Baseninfusion mit Magnesium", "std_procain_basen","Procain Baseninfusion mit Magnesium")
             artemisinin          = _inf_row("Artemisinin Infusion mit 2x Lysin",             "std_artemisinin",     "Artemisinin Infusion mit 2x Lysin")
