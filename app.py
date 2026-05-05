@@ -29,9 +29,16 @@ db = get_db()
 def fetch_supplements():
     return db.fetch_supplements()
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def fetch_patient_names():
     return db.fetch_patient_names()
+
+@st.cache_data
+def _get_logo_b64():
+    if os.path.exists("clinic_logo.png"):
+        with open("clinic_logo.png", "rb") as _f:
+            return base64.b64encode(_f.read()).decode()
+    return None
 
 def save_patient_data(patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data):
     result = db.save_patient_data(patient_data, nem_prescriptions, therapieplan_data, ernaehrung_data, infusion_data)
@@ -168,8 +175,9 @@ hr { margin: 16px 0 !important; border-width: 1px !important; border-color: #e8e
 .info-icon:hover { background-color: rgb(38,96,65); color: white; }
 .info-icon:hover::after {
     content: attr(data-tooltip); position: absolute; left: 22px; top: -10px;
-    background-color: #1a1a2e; color: white; padding: 6px 10px; border-radius: 6px;
-    font-size: 13px; white-space: nowrap; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    background-color: #1a1a2e; color: white; padding: 8px 12px; border-radius: 6px;
+    font-size: 12px; white-space: pre-line; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    max-width: 320px; min-width: 140px; line-height: 1.6;
 }
 div[data-testid="column"] { padding: 0 8px !important; min-width: 0 !important; }
 div[data-testid="stVerticalBlockBorderWrapper"] { overflow-x: auto !important; }
@@ -241,10 +249,8 @@ with st.sidebar:
 # =========================================================
 col1, col2, col3 = st.columns([1.2, 3, 0.7])
 with col1:
-    if os.path.exists("clinic_logo.png"):
-        with open("clinic_logo.png", "rb") as _lf:
-            import base64 as _b64
-            _logo_b64 = _b64.b64encode(_lf.read()).decode()
+    _logo_b64 = _get_logo_b64()
+    if _logo_b64:
         st.markdown(
             f'<a href="https://revitaclinic.de" target="_blank">'
             f'<img src="data:image/png;base64,{_logo_b64}" width="200" style="display:block;"/>'
@@ -445,7 +451,7 @@ def _parse_saved_date(val, fallback):
 # Column layout: [label | Wo.Start(+4W btn) | Wo.Ende(+12W btn) | Häufigkeit | Von | Bis]
 ROW_COLS = [2.5, 0.38, 0.38, 0.55, 0.55, 0.9, 1.0, 1.0]
 # Infusion rows add a dedicated Kommentar column (9th)
-INF_ROW_COLS = [1.9, 0.48, 0.48, 0.5, 0.5, 0.85, 0.9, 0.9, 1.0]
+INF_ROW_COLS = [1.6, 0.42, 0.42, 0.5, 0.5, 0.8, 0.85, 0.85, 1.8]
 # Diagnostik section uses a different layout: [label | Zeitpunkt | Kommentar]
 DIAG_COLS = [3.5, 2.0, 2.5]
 
@@ -952,7 +958,32 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Helvetica", "", 9)
 
+        def _nem_col_headers():
+            pdf.set_fill_color(38, 96, 65)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", "B", 8)
+            for w, h in zip(widths, headers):
+                pdf.cell(w, 8, h, 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Helvetica", "", 9)
+
+        _nem_current_cat = None
         for s in supplements:
+            # ── Category divider row ──
+            _cat = s.get("_category", "")
+            if _cat and _cat != _nem_current_cat:
+                _nem_current_cat = _cat
+                if pdf.get_y() + 12 > pdf.page_break_trigger:
+                    pdf.add_page()
+                    _nem_col_headers()
+                pdf.set_fill_color(220, 235, 225)
+                pdf.set_text_color(38, 96, 65)
+                pdf.set_font("Helvetica", "B", 8)
+                pdf.cell(table_width, 6, f"  {clean_text(_cat)}", 1, 1, "L", True)
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font("Helvetica", "", 9)
+
             cells = [
                 strip_dosage(clean_text(s.get("name", ""))),
                 clean_text(s.get("Darreichungsform", "")),
@@ -972,14 +1003,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
 
             if pdf.get_y() + row_height > pdf.page_break_trigger:
                 pdf.add_page()
-                pdf.set_fill_color(38, 96, 65)
-                pdf.set_text_color(255, 255, 255)
-                pdf.set_font("Helvetica", "B", 8)
-                for w, h in zip(widths, headers):
-                    pdf.cell(w, 8, h, 1, 0, "C", True)
-                pdf.ln()
-                pdf.set_text_color(0, 0, 0)
-                pdf.set_font("Helvetica", "", 9)
+                _nem_col_headers()
 
             start_x, start_y = pdf.get_x(), pdf.get_y()
             for i, (cell, width) in enumerate(zip(cells, widths)):
@@ -1478,6 +1502,52 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
                 base = k[:-len("_freq")]
                 st.session_state[f"fr_{base}"] = str(v) if v else ""
 
+    # ── Restore extra row widget keys (name text + checkbox) ──
+    # These persist in session_state across patient switches, so must be explicitly reset.
+    _tp_data  = tp  or {}
+    _inf_data = inf or {}
+    for sec in ["haupt", "bio"]:
+        for i in range(1, 4):
+            slug = f"{sec}_extra{i}"
+            st.session_state[slug + "_cb"]         = bool(_tp_data.get(slug + "_cb", False))
+            st.session_state[slug + "_text_input"] = _tp_data.get(slug + "_text", "")
+    for i in range(1, 4):
+        slug = f"inf_extra{i}"
+        st.session_state[slug + "_cb"]         = bool(_inf_data.get(slug + "_cb", False))
+        st.session_state[slug + "_text_input"] = _inf_data.get(slug + "_text", "")
+        st.session_state[slug + "_comment_inp"] = _inf_data.get(slug + "_comment", "")
+    for j in range(1, 3):
+        st.session_state[f"inf_custom{j}_cb"]   = bool(_inf_data.get(f"inf_custom{j}_cb", False))
+        st.session_state[f"inf_custom{j}_text"]  = _inf_data.get(f"inf_custom{j}_text", "")
+
+    # ── Restore custom NEM extra rows from ernaehrung_data ──
+    _custom_nem = (ern or {}).get("_custom_nem_rows", [])
+    for i in range(1, 6):
+        pfx = f"nem_extra{i}"
+        st.session_state[f"{pfx}_name"]  = ""
+        st.session_state[f"{pfx}_form"]  = "Kapseln"
+        st.session_state[f"{pfx}_nue"]   = ""
+        st.session_state[f"{pfx}_morg"]  = ""
+        st.session_state[f"{pfx}_mitt"]  = ""
+        st.session_state[f"{pfx}_abend"] = ""
+        st.session_state[f"{pfx}_nacht"] = ""
+        st.session_state[f"{pfx}_kom"]   = ""
+    for entry in _custom_nem:
+        try:
+            i = int(entry.get("_idx", 0))
+        except Exception:
+            continue
+        if 1 <= i <= 5:
+            pfx = f"nem_extra{i}"
+            st.session_state[f"{pfx}_name"]  = entry.get("name", "")
+            st.session_state[f"{pfx}_form"]  = entry.get("Darreichungsform", "Kapseln")
+            st.session_state[f"{pfx}_nue"]   = entry.get("Nüchtern", "")
+            st.session_state[f"{pfx}_morg"]  = entry.get("Morgens", "")
+            st.session_state[f"{pfx}_mitt"]  = entry.get("Mittags", "")
+            st.session_state[f"{pfx}_abend"] = entry.get("Abends", "")
+            st.session_state[f"{pfx}_nacht"] = entry.get("Nachts", "")
+            st.session_state[f"{pfx}_kom"]   = entry.get("Kommentar", "")
+
     # ── NEM: flag for main() to push after df is available ──
     st.session_state["_pending_nem_push"] = True
 
@@ -1520,6 +1590,9 @@ def patient_inputs():
             key=dd_key, label_visibility="collapsed")
         if sel_idx and sel_idx != "— Patient auswählen —" and sel_idx != st.session_state.get("last_loaded_patient"):
             st.session_state.clicked_suggestion = sel_idx
+        elif sel_idx == "— Patient auswählen —" and st.session_state.get("last_loaded_patient"):
+            st.session_state["_do_full_wipe"] = True
+            st.rerun()
 
     # ── Load patient (from dropdown or suggestion button) ──
     if st.session_state.clicked_suggestion:
@@ -1691,7 +1764,10 @@ def main():
     # This is safe here because we are BEFORE patient_inputs() renders,
     # so no widgets have been instantiated in this run yet.
     if st.session_state.get("_do_full_wipe"):
+        _saved_auth = st.session_state.get("_auth_user")  # preserve login across wipe
         st.session_state.clear()
+        if _saved_auth:
+            st.session_state["_auth_user"] = _saved_auth
         st.session_state["patient_data"]      = {}
         st.session_state["nem_prescriptions"] = []
         st.session_state["therapieplan_data"] = {}
@@ -2250,15 +2326,48 @@ def main():
                                 "Abends": abend_val, "Nachts": nacht_val, "Kommentar": comment
                             })
 
+                # ── Global additional supplement rows (at bottom of scroll area) ──
+                st.markdown(
+                    '<div style="font-size:13px;font-weight:700;color:rgb(38,96,65);'
+                    'border-top:2px solid rgba(38,96,65,0.2);margin-top:10px;padding-top:8px;">'
+                    'Zusätzliche Ergänzungen</div>', unsafe_allow_html=True)
+                _hcols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
+                for _hc, _ht in zip(_hcols, ["Supplement","Darreichungsform","Nü.","Morg.","Mitt.","Ab.","Na.","Kommentar"]):
+                    _hc.markdown(f"<span style='font-size:11px;font-weight:700;color:rgb(38,96,65);'>{_ht}</span>",
+                                  unsafe_allow_html=True)
+                _extra_dose_opts = ["","1","2","3","4","5"]
+                _extra_form_opts = ["Kapseln","Lösung","Tabletten","Pulver","Tropfen","Sachet","Öl","Spray","Creme","Gel","Flüssig","Tee","Pflaster"]
+                for _ei in range(1, 6):
+                    _epfx = f"nem_extra{_ei}"
+                    _ecols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
+                    _ecols[0].text_input("", key=f"{_epfx}_name",
+                        placeholder=f"Supplement {_ei}...", label_visibility="collapsed")
+                    _ef_init = st.session_state.get(f"{_epfx}_form", "Kapseln")
+                    _ecols[1].selectbox("", _extra_form_opts,
+                        index=_extra_form_opts.index(_ef_init) if _ef_init in _extra_form_opts else 0,
+                        key=f"{_epfx}_form", label_visibility="collapsed")
+                    def _edi(v): return _extra_dose_opts.index(v) if v in _extra_dose_opts else 0
+                    _ecols[2].selectbox("", _extra_dose_opts, index=_edi(st.session_state.get(f"{_epfx}_nue","")),   key=f"{_epfx}_nue",   label_visibility="collapsed")
+                    _ecols[3].selectbox("", _extra_dose_opts, index=_edi(st.session_state.get(f"{_epfx}_morg","")),  key=f"{_epfx}_morg",  label_visibility="collapsed")
+                    _ecols[4].selectbox("", _extra_dose_opts, index=_edi(st.session_state.get(f"{_epfx}_mitt","")),  key=f"{_epfx}_mitt",  label_visibility="collapsed")
+                    _ecols[5].selectbox("", _extra_dose_opts, index=_edi(st.session_state.get(f"{_epfx}_abend","")), key=f"{_epfx}_abend", label_visibility="collapsed")
+                    _ecols[6].selectbox("", _extra_dose_opts, index=_edi(st.session_state.get(f"{_epfx}_nacht","")), key=f"{_epfx}_nacht", label_visibility="collapsed")
+                    _ecols[7].text_input("", key=f"{_epfx}_kom", placeholder="Kommentar", label_visibility="collapsed")
+
             if st.button("NEM PDF generieren", key="nem_pdf_button"):
                 # Build PDF data from session state keys so closed categories are included
+                # Track current category so each supplement carries its category name for PDF rendering
                 pdf_data = []
+                _pdf_current_cat = None
                 for _, df_row in df.iterrows():
-                    if df_row["id"].startswith("CAT"): continue
+                    if df_row["id"].startswith("CAT"):
+                        _pdf_current_cat = df_row["name"].replace("CATEGORY: ", "")
+                        continue
                     rid = df_row["id"]
                     name = df_row["name"]
                     p = {
                         "name": name,
+                        "_category": _pdf_current_cat or "",
                         "Gesamt-dosierung":  str(st.session_state.get(f"{rid}_gesamt_dosierung", "") or ""),
                         "Darreichungsform":  str(st.session_state.get(f"{rid}_darreichungsform", DEFAULT_FORMS.get(name, "Kapseln")) or ""),
                         "Pro Einnahme":      str(st.session_state.get(f"{rid}_pro_Einnahme", "") or ""),
@@ -2275,6 +2384,24 @@ def main():
                             or p["Kommentar"].strip()
                             or (p["Darreichungsform"] != DEFAULT_FORMS.get(name,"Kapseln") and p["Darreichungsform"].strip())):
                         pdf_data.append(p)
+                # Custom NEM extra rows
+                for _ei in range(1, 6):
+                    _epfx = f"nem_extra{_ei}"
+                    _en   = str(st.session_state.get(f"{_epfx}_name",  "") or "")
+                    _ef   = str(st.session_state.get(f"{_epfx}_form",  "Kapseln") or "Kapseln")
+                    _enue = str(st.session_state.get(f"{_epfx}_nue",   "") or "")
+                    _emg  = str(st.session_state.get(f"{_epfx}_morg",  "") or "")
+                    _emt  = str(st.session_state.get(f"{_epfx}_mitt",  "") or "")
+                    _eab  = str(st.session_state.get(f"{_epfx}_abend", "") or "")
+                    _ena  = str(st.session_state.get(f"{_epfx}_nacht", "") or "")
+                    _eko  = str(st.session_state.get(f"{_epfx}_kom",   "") or "")
+                    if _en.strip() or any(x.strip() for x in [_enue, _emg, _emt, _eab, _ena]):
+                        pdf_data.append({
+                            "name": _en, "_category": "Zusätzliche Ergänzungen",
+                            "Gesamt-dosierung": "", "Darreichungsform": _ef, "Pro Einnahme": "",
+                            "Nüchtern": _enue, "Morgens": _emg, "Mittags": _emt,
+                            "Abends": _eab, "Nachts": _ena, "Kommentar": _eko,
+                        })
                 if pdf_data:
                     pdf_bytes = generate_pdf(patient, pdf_data, "NEM")
                     st.session_state.auto_download_pdf = {
@@ -2352,30 +2479,68 @@ def main():
 
         with st.expander("RevitaClinic Infusionen", expanded=inf.get("_sec_revita_open", True)):
             _inf_sched_header()
-            revita_immune        = _inf_row("RevitaImmune",        "revita_immune",        "Vitamin C, Zink, Selen, Magnesium, B-Vitamine")
-            revita_immune_plus   = _inf_row("RevitaImmunePlus",    "revita_immune_plus",   "Hochdosiert: Vitamin C, Zink, Selen, Magnesium, B-Vitamine, Glutathion")
-            revita_heal          = _inf_row("Revita Heal (2x)",    "revita_heal",          "Vitamin C, Zink, Arginin, Glutamin, B-Vitamine, Magnesium")
-            revita_bludder       = _inf_row("RevitaBladder",       "revita_bludder",       "Eisen, Vitamin B12, Folsäure, Vitamin C")
-            revita_ferro         = _inf_row("RevitaFerro",         "revita_ferro",         "Ferinject (Eisen), Vitamin C")
-            revita_energy        = _inf_row("RevitaEnergyBoost",   "revita_energy",        "Magnesium, B-Vitamine, Vitamin C, Coenzym Q10")
-            revita_focus         = _inf_row("RevitaFocus",         "revita_focus",         "Magnesium, B-Vitamine, Vitamin C, Zink, Alpha-Liponsäure")
-            revita_nad           = _inf_row("RevitaNAD+",          "revita_nad",           "NAD+ 500mg (oder 125mg), Magnesium, B-Vitamine")
-            revita_relax         = _inf_row("RevitaRelax",         "revita_relax",         "Magnesium, B-Vitamine, Vitamin C, Calcium")
-            revita_fit           = _inf_row("RevitaFit",           "revita_fit",           "Magnesium, B-Vitamine, Vitamin C, Aminosäuren, Coenzym Q10")
-            revita_hangover      = _inf_row("RevitaHangover",      "revita_hangover",      "Elektrolyte, Vitamin C, B-Vitamine, Magnesium, Glutathion")
-            revita_beauty        = _inf_row("RevitaBeauty",        "revita_beauty",        "Vitamin C, Biotin, Zink, Selen, B-Vitamine")
-            revita_antiaging     = _inf_row("RevitaAnti-Aging",    "revita_antiaging",     "Glutathion, Vitamin C, Alpha-Liponsäure, Selen, Zink")
-            revita_detox         = _inf_row("RevitaDetox",         "revita_detox",         "Glutathion, Vitamin C, Magnesium, B-Vitamine")
-            revita_chelate       = _inf_row("RevitaChelate",       "revita_chelate",       "EDTA, DMSA, Vitamin C, Magnesium, Zink")
-            revita_liver         = _inf_row("RevitaLiver",         "revita_liver",         "Glutathion, Vitamin C, B-Vitamine, Magnesium, Mariendistel-Extrakt")
-            revita_leakygut      = _inf_row("RevitaLeaky-gut",     "revita_leakygut",      "Glutamin, Zink, Vitamin C, B-Vitamine, Magnesium")
-            revita_infection     = _inf_row("RevitaInfection",     "revita_infection",     "Vitamin C, Zink, Selen, Magnesium, B-Vitamine, Glutathion")
-            revita_joint         = _inf_row("RevitaJoint",         "revita_joint",         "Vitamin C, Magnesium, Zink, Mangan, B-Vitamine")
+            revita_immune      = _inf_row("RevitaImmune",
+                "revita_immune",
+                "Preis: 160 EUR\n1x Vitamin C\n2x Elektrolyte\n2x ATP-Konzentrat\n250 ml 0,9% NaCl")
+            revita_immune_plus = _inf_row("RevitaImmunePlus",
+                "revita_immune_plus",
+                "Preis: 220 EUR\n1x Selen (100ml NaCl)\n1x Zink (100ml NaCl)\n2x Vit.C | 2x Elektrolyte\n2x ATP Konzentrat | 1x Lysin\n1x Methionin | 1x Glutamin\n2x Lymphdiaral\n500 ml + 100 ml NaCl")
+            revita_heal        = _inf_row("Revita Heal (2x)",
+                "revita_heal",
+                "Preis: 450 EUR (Paket)\nPRAEOP: 1x Zink (100ml) | 3x Lysin/Prolin\n1x Mg 400 | 1x Procain | 2x ATP\n1x Aminovital | 1x Cholincitrat\n3x Methionin | 2x Glutamin\n1x Lymphdiaral | 2x Traumeel | 500ml NaCl\nPOSTOP: 1x Selen (100ml) | 1x B12\n1x Folsaeure | 2x ATP | 3x Lysin-Prolin\n3x Methionin | 1x Elektrolyte\n1x Procain | 2x Vit.C 7,5g | 250ml NaCl")
+            revita_bludder     = _inf_row("RevitaInfection (vorher Blaseninfusion)",
+                "revita_bludder",
+                "Preis: 280 EUR\n1x Aminovital | 1x Cholincitrat\n2x Glutamin | 4x Methionin\n2x Prolin/Lysin | 1x Mg 400\n1x Procain | 3x Traumeel\n1x Vit.C 25g\n500 ml NaCl")
+            revita_ferro       = _inf_row("RevitaFerro",
+                "revita_ferro",
+                "Preis: auf Anfrage\n1x Ferinject (100ml NaCl)\n1x Vit.C (+B12) (100ml NaCl)")
+            revita_energy      = _inf_row("RevitaEnergyBoost",
+                "revita_energy",
+                "Preis: 170 EUR\n2x Elektrolyte | 3x Lymphdiaral\n2x ATP-Konzentrat | 2x Tyrosin\n250 ml NaCl")
+            revita_focus       = _inf_row("RevitaFocus",
+                "revita_focus",
+                "Preis: 265 EUR\n1x Alpha Liponsaeure (100ml NaCl)\n1x Zink (100ml NaCl)\n1x AminoVital | 2x ATP-Konzentrat\n1x Mg 200 | 1x Taurin | 3x Tyrosin\n1x Carnitin | 1x Vit.C 7,5 | 1x TAD\n250 ml NaCl")
+            revita_nad         = _inf_row("RevitaNAD+",
+                "revita_nad",
+                "Preis: 500mg = 290 EUR | 125mg = 240 EUR\n1x NAD+ 500mg ODER 1x NAD+ 125mg\nVictoria: 500ml NaCl 0,9%\nBurk: 500ml Ringer Loesung\nGeringste Infusionsgeschwindigkeit!")
+            revita_relax       = _inf_row("RevitaRelax",
+                "revita_relax",
+                "Preis: 185 EUR\n1x Procain Baseninfusion (100ml NaCl)\n  (NaBiC 8,4% | Mg 400 | Procain 2%)\ndanach:\n1x Cholincitrat | 1x Aminovital\n1x Tryptophan | 1x Phenylalanin\n1x Tyrosin\n250 ml NaCl")
+            revita_fit         = _inf_row("RevitaFit",
+                "revita_fit",
+                "Preis: 260 EUR\n1x Alpha Liponsaeure (100ml NaCl)\n2x ATP Konzentrat | 1x Mg 200\n1x Carnitin | 1x Carnosin\n1x Protect Drip (Vit.C 7,5g, Lysin 2g,\n  AOCT, Methionin 750mg, Carnosin 200mg, Carnitin 1g)\n1x Glutamin | 1x Taurin | 1x TAD\n500 ml NaCl")
+            revita_hangover    = _inf_row("RevitaHangover",
+                "revita_hangover",
+                "Preis: 225 EUR\n1x Zink (100ml NaCl)\n2x ATP Konzentrat | 2x TAD\n1x Vit.C 10g | 2x Elektrolyte\n1x Mg 200 | 2x Tyrosin\n2x Tryptophan | 1x Phenylalanin\n500 ml NaCl")
+            revita_beauty      = _inf_row("RevitaBeauty",
+                "revita_beauty",
+                "Preis: 170 EUR\n1x Beauty Drip (Arginin 2g, Methionin 750mg,\n  Taurin 1g, Prolin 3g, Lysin 3g,\n  Biotin 5mg, Elektrolyte)\n1x Vit.C 7,5g | 1x TAD 600mg\n250 ml NaCl")
+            revita_antiaging   = _inf_row("RevitaAnti-Aging",
+                "revita_antiaging",
+                "Preis: 290 EUR\n2x TAD | 2x Carnosin | 2x Prolin/Lysin\n4x Biotin | 1x Vit.C 7,5\n1x Methionin | 1x Taurin | 1x Lysin\n1x Mg 200 | 1x Aminovital\n2x ATP Konzentrat\n500 ml NaCl")
+            revita_detox       = _inf_row("RevitaDetox",
+                "revita_detox",
+                "Preis: 160 EUR\n1x DetoxDrip (Elektrolyte, AOCT, Lysin,\n  Methionin, Glutamin, Carnitin)\n1x TAD\n250 ml NaCl")
+            revita_chelate     = _inf_row("RevitaChelate",
+                "revita_chelate",
+                "CHELATE I (180 EUR):\n1x NaBic | 1x DMSA | 1x Alpha-Liponsaeure\n  (je 100ml NaCl)\n1x TAD (spritzen) | 1x Ca-EDTA (250ml NaCl)\n\nCHELATE II (200 EUR):\n1x NaBic | 1x DMPS | 1x Alpha-Liponsaeure\n  (je 100ml NaCl)\n1x TAD (spritzen) | 1x Ca-EDTA (250ml NaCl)")
+            revita_liver       = _inf_row("RevitaLiver",
+                "revita_liver",
+                "Preis: 230 EUR\n1x Alpha Liponsaeure (100ml NaCl)\n2x TAD | 2x Elektrolyte\n3x Hepar Comp Heal | 1x AOCT\n1x Cholincitrat | 1x Methionin\n1x Aminovital | 1x B-Komplex | 1x B6\n250 ml NaCl")
+            revita_leakygut    = _inf_row("RevitaLeaky-gut",
+                "revita_leakygut",
+                "Preis: 195 EUR\n1x Leaky Gut Amino Drip\n  (B12, Cholincitrat, Elektrolyte,\n  Glutamin, Lysin, Taurin)\n1x Glutamin | 1x Vit.C 7,5\n250 ml NaCl")
+            revita_infection   = _inf_row("RevitaNerve (vorher Polyneuropathie)",
+                "revita_infection",
+                "Preis: 240 EUR\n1x Alpha Liponsaeure (100ml NaCl)\n1x AOCT | 2x ATP Konzentrat\n2x Elektrolyte | 1x Folsaeure\n1x Mg 200 | 1x Vit.B6 | 1x B12\n1x B-Komplex | 2x Vit.C 7,5g\n250 ml NaCl")
+            revita_joint       = _inf_row("RevitaJoint",
+                "revita_joint",
+                "Preis: 210 EUR\n1x Prolin/Lysin | 1x Lysin\n1x ATP | 1x AOCT | 1x Vit.C 7,5\n2x Elektrolyte | 1x Glutamin | 1x TAD\n250 ml NaCl")
 
         with st.expander("Sonstiges", expanded=inf.get("_sec_sonstiges_open", False)):
             _inf_sched_header()
             mito_energy      = _inf_row("Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)", "std_mito_energy",     "Mito-Energy Behandlung mit Wirkbooster")
-            oxyvenierung     = _inf_row("Oxyvenierung (10–40 ml, 10er Serie)",              "std_oxyvenierung",    "Oxyvenierung (10–40 ml, 10er Serie)")
+            oxyvenierung     = _inf_row("RevitaOxy",                                         "std_oxyvenierung",    "Preis: 50 EUR\nOxyvenierung")
 
             # 2 additional free-text checkbox rows with timing
             def _inf_custom_row(idx):
@@ -2548,6 +2713,26 @@ def main():
             inf_db = _ser(st.session_state.get("infusion_data",      {}))
             ern_db = _ser(st.session_state.get("ernaehrung_data",    {}))
 
+            # ── 4. Custom NEM extra rows → saved in ernaehrung_data blob ──
+            _custom_nem_save = []
+            for _ei in range(1, 6):
+                _epfx = f"nem_extra{_ei}"
+                _en   = str(st.session_state.get(f"{_epfx}_name",  "") or "")
+                _ef   = str(st.session_state.get(f"{_epfx}_form",  "Kapseln") or "Kapseln")
+                _enue = str(st.session_state.get(f"{_epfx}_nue",   "") or "")
+                _emg  = str(st.session_state.get(f"{_epfx}_morg",  "") or "")
+                _emt  = str(st.session_state.get(f"{_epfx}_mitt",  "") or "")
+                _eab  = str(st.session_state.get(f"{_epfx}_abend", "") or "")
+                _ena  = str(st.session_state.get(f"{_epfx}_nacht", "") or "")
+                _eko  = str(st.session_state.get(f"{_epfx}_kom",   "") or "")
+                if _en.strip() or any(x.strip() for x in [_enue, _emg, _emt, _eab, _ena]):
+                    _custom_nem_save.append({
+                        "_idx": _ei, "name": _en, "Darreichungsform": _ef,
+                        "Nüchtern": _enue, "Morgens": _emg, "Mittags": _emt,
+                        "Abends": _eab, "Nachts": _ena, "Kommentar": _eko,
+                    })
+            ern_db["_custom_nem_rows"] = _custom_nem_save
+
             # Debug: print to console so errors are visible
             print(f"SAVING: patient={patient_for_db['patient']}, NEM={len(nem_to_save)} items")
             print(f"  tp keys: {len(tp_db)}, inf keys: {len(inf_db)}")
@@ -2568,13 +2753,13 @@ def main():
         with tabs[3]:
             admin_panel(db)
 
-    # ── Autosave (every 45s if data changed and patient already exists in DB) ──
+    # ── Autosave (every 120s if data changed and patient already exists in DB) ──
     _last_loaded = st.session_state.get("last_loaded_patient", "")
     if _last_loaded and patient.get("patient", "").strip() == _last_loaded:
         import time as _time
         import hashlib as _hashlib
         _now = _time.time()
-        _cooldown = 45
+        _cooldown = 120
         _last_as = st.session_state.get("_autosave_time", 0)
         if _now - _last_as >= _cooldown:
             def _quick_ser(obj):
