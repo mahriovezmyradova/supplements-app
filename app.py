@@ -557,6 +557,17 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
     de_key      = f"{key_prefix}_{slug}_date_end"
     freq_key    = f"{key_prefix}_{slug}_freq"
 
+    # Skip all widget rendering when row is unchecked — preserves stored values,
+    # eliminates ~7 widgets per unchecked row (major perf win for infusion tab).
+    if not is_checked:
+        return {
+            w_start_key: data_store.get(w_start_key, "0"),
+            w_end_key:   data_store.get(w_end_key,   "0"),
+            ds_key:      data_store.get(ds_key),
+            de_key:      data_store.get(de_key),
+            freq_key:    data_store.get(freq_key, ""),
+        }
+
     # "0" = not filled (default); weeks 1..total follow
     week_opts = ["0"] + [str(w) for w in range(1, total_weeks + 1)]
 
@@ -1520,33 +1531,12 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         st.session_state[f"inf_custom{j}_cb"]   = bool(_inf_data.get(f"inf_custom{j}_cb", False))
         st.session_state[f"inf_custom{j}_text"]  = _inf_data.get(f"inf_custom{j}_text", "")
 
-    # ── Restore custom NEM extra rows from ernaehrung_data ──
-    _custom_nem = (ern or {}).get("_custom_nem_rows", [])
-    for i in range(1, 6):
-        pfx = f"nem_extra{i}"
-        st.session_state[f"{pfx}_name"]  = ""
-        st.session_state[f"{pfx}_form"]  = "Kapseln"
-        st.session_state[f"{pfx}_nue"]   = ""
-        st.session_state[f"{pfx}_morg"]  = ""
-        st.session_state[f"{pfx}_mitt"]  = ""
-        st.session_state[f"{pfx}_abend"] = ""
-        st.session_state[f"{pfx}_nacht"] = ""
-        st.session_state[f"{pfx}_kom"]   = ""
-    for entry in _custom_nem:
-        try:
-            i = int(entry.get("_idx", 0))
-        except Exception:
-            continue
-        if 1 <= i <= 5:
-            pfx = f"nem_extra{i}"
-            st.session_state[f"{pfx}_name"]  = entry.get("name", "")
-            st.session_state[f"{pfx}_form"]  = entry.get("Darreichungsform", "Kapseln")
-            st.session_state[f"{pfx}_nue"]   = entry.get("Nüchtern", "")
-            st.session_state[f"{pfx}_morg"]  = entry.get("Morgens", "")
-            st.session_state[f"{pfx}_mitt"]  = entry.get("Mittags", "")
-            st.session_state[f"{pfx}_abend"] = entry.get("Abends", "")
-            st.session_state[f"{pfx}_nacht"] = entry.get("Nachts", "")
-            st.session_state[f"{pfx}_kom"]   = entry.get("Kommentar", "")
+    # ── Per-category NEM extra rows: seed happens inside NEM tab on next render ──
+    # Clear any stale nem_cx_* keys from previous patient so widgets reset cleanly.
+    for _k in list(st.session_state.keys()):
+        if _k.startswith("nem_cx_") or _k == "_nem_cat_names":
+            del st.session_state[_k]
+    st.session_state["_pending_nem_cat_seed"] = True
 
     # ── NEM: flag for main() to push after df is available ──
     st.session_state["_pending_nem_push"] = True
@@ -2224,6 +2214,7 @@ def main():
 
             scroll_container = st.container(height=600, border=True)
             with scroll_container:
+                import re as _re
                 all_supplements_data = []
                 categories = {}
                 current_category_name = None
@@ -2235,8 +2226,18 @@ def main():
                     elif current_category_name:
                         categories[current_category_name].append(row)
 
+                # Track slug→display name so save/PDF can iterate without knowing category list
+                if "_nem_cat_names" not in st.session_state:
+                    st.session_state["_nem_cat_names"] = {}
+                _do_nem_cat_seed = st.session_state.pop("_pending_nem_cat_seed", False)
+                _custom_nem_loaded = st.session_state.ernaehrung_data.get("_custom_nem_rows", [])
+                _extra_dose_opts = ["","1","2","3","4","5"]
+                _extra_form_opts = ["Kapseln","Lösung","Tabletten","Pulver","Tropfen","Sachet","Öl","Spray","Creme","Gel","Flüssig","Tee","Pflaster"]
+
                 for category_name, supplement_rows in categories.items():
                     if not supplement_rows: continue
+                    _cat_slug = _re.sub(r'[^a-z0-9]+', '_', category_name.lower()).strip('_')
+                    st.session_state["_nem_cat_names"][_cat_slug] = category_name
 
                     with st.expander(category_name, expanded=False):
                         _seen_stripped = set()
@@ -2326,33 +2327,32 @@ def main():
                                 "Abends": abend_val, "Nachts": nacht_val, "Kommentar": comment
                             })
 
-                # ── Global additional supplement rows (at bottom of scroll area) ──
-                st.markdown(
-                    '<div style="font-size:13px;font-weight:700;color:rgb(38,96,65);'
-                    'border-top:2px solid rgba(38,96,65,0.2);margin-top:10px;padding-top:8px;">'
-                    'Zusätzliche Ergänzungen</div>', unsafe_allow_html=True)
-                _hcols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
-                for _hc, _ht in zip(_hcols, ["Supplement","Darreichungsform","Nü.","Morg.","Mitt.","Ab.","Na.","Kommentar"]):
-                    _hc.markdown(f"<span style='font-size:11px;font-weight:700;color:rgb(38,96,65);'>{_ht}</span>",
-                                  unsafe_allow_html=True)
-                _extra_dose_opts = ["","1","2","3","4","5"]
-                _extra_form_opts = ["Kapseln","Lösung","Tabletten","Pulver","Tropfen","Sachet","Öl","Spray","Creme","Gel","Flüssig","Tee","Pflaster"]
-                for _ei in range(1, 6):
-                    _epfx = f"nem_extra{_ei}"
-                    _ecols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
-                    _ecols[0].text_input("", key=f"{_epfx}_name",
-                        placeholder=f"Supplement {_ei}...", label_visibility="collapsed")
-                    _ef_init = st.session_state.get(f"{_epfx}_form", "Kapseln")
-                    _ecols[1].selectbox("", _extra_form_opts,
-                        index=_extra_form_opts.index(_ef_init) if _ef_init in _extra_form_opts else 0,
-                        key=f"{_epfx}_form", label_visibility="collapsed")
-                    def _edi(v): return _extra_dose_opts.index(v) if v in _extra_dose_opts else 0
-                    _ecols[2].selectbox("", _extra_dose_opts, index=_edi(st.session_state.get(f"{_epfx}_nue","")),   key=f"{_epfx}_nue",   label_visibility="collapsed")
-                    _ecols[3].selectbox("", _extra_dose_opts, index=_edi(st.session_state.get(f"{_epfx}_morg","")),  key=f"{_epfx}_morg",  label_visibility="collapsed")
-                    _ecols[4].selectbox("", _extra_dose_opts, index=_edi(st.session_state.get(f"{_epfx}_mitt","")),  key=f"{_epfx}_mitt",  label_visibility="collapsed")
-                    _ecols[5].selectbox("", _extra_dose_opts, index=_edi(st.session_state.get(f"{_epfx}_abend","")), key=f"{_epfx}_abend", label_visibility="collapsed")
-                    _ecols[6].selectbox("", _extra_dose_opts, index=_edi(st.session_state.get(f"{_epfx}_nacht","")), key=f"{_epfx}_nacht", label_visibility="collapsed")
-                    _ecols[7].text_input("", key=f"{_epfx}_kom", placeholder="Kommentar", label_visibility="collapsed")
+                        # ── Per-category extra row ──────────────────────────
+                        _epfx = f"nem_cx_{_cat_slug}"
+                        if _do_nem_cat_seed:
+                            _ce = next((e for e in _custom_nem_loaded if e.get("_cat") == _cat_slug), None)
+                            st.session_state[f"{_epfx}_name"]  = _ce.get("name", "")          if _ce else ""
+                            st.session_state[f"{_epfx}_form"]  = _ce.get("Darreichungsform", "Kapseln") if _ce else "Kapseln"
+                            st.session_state[f"{_epfx}_nue"]   = _ce.get("Nüchtern", "")      if _ce else ""
+                            st.session_state[f"{_epfx}_morg"]  = _ce.get("Morgens", "")       if _ce else ""
+                            st.session_state[f"{_epfx}_mitt"]  = _ce.get("Mittags", "")       if _ce else ""
+                            st.session_state[f"{_epfx}_abend"] = _ce.get("Abends", "")        if _ce else ""
+                            st.session_state[f"{_epfx}_nacht"] = _ce.get("Nachts", "")        if _ce else ""
+                            st.session_state[f"{_epfx}_kom"]   = _ce.get("Kommentar", "")     if _ce else ""
+                        st.markdown('<div style="font-size:11px;color:#aaa;margin-top:6px;margin-bottom:2px;">+ Zusatz</div>', unsafe_allow_html=True)
+                        _ecols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
+                        _ecols[0].text_input("", key=f"{_epfx}_name", placeholder="Supplement...", label_visibility="collapsed")
+                        _ef_cx = st.session_state.get(f"{_epfx}_form", "Kapseln")
+                        _ecols[1].selectbox("", _extra_form_opts,
+                            index=_extra_form_opts.index(_ef_cx) if _ef_cx in _extra_form_opts else 0,
+                            key=f"{_epfx}_form", label_visibility="collapsed")
+                        def _edi_cx(v, _d=_extra_dose_opts): return _d.index(v) if v in _d else 0
+                        _ecols[2].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nue","")),   key=f"{_epfx}_nue",   label_visibility="collapsed")
+                        _ecols[3].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_morg","")),  key=f"{_epfx}_morg",  label_visibility="collapsed")
+                        _ecols[4].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_mitt","")),  key=f"{_epfx}_mitt",  label_visibility="collapsed")
+                        _ecols[5].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_abend","")), key=f"{_epfx}_abend", label_visibility="collapsed")
+                        _ecols[6].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nacht","")), key=f"{_epfx}_nacht", label_visibility="collapsed")
+                        _ecols[7].text_input("", key=f"{_epfx}_kom", placeholder="Kommentar", label_visibility="collapsed")
 
             if st.button("NEM PDF generieren", key="nem_pdf_button"):
                 # Build PDF data from session state keys so closed categories are included
@@ -2384,9 +2384,9 @@ def main():
                             or p["Kommentar"].strip()
                             or (p["Darreichungsform"] != DEFAULT_FORMS.get(name,"Kapseln") and p["Darreichungsform"].strip())):
                         pdf_data.append(p)
-                # Custom NEM extra rows
-                for _ei in range(1, 6):
-                    _epfx = f"nem_extra{_ei}"
+                # Per-category custom extra rows
+                for _cslug, _cdisplay in st.session_state.get("_nem_cat_names", {}).items():
+                    _epfx = f"nem_cx_{_cslug}"
                     _en   = str(st.session_state.get(f"{_epfx}_name",  "") or "")
                     _ef   = str(st.session_state.get(f"{_epfx}_form",  "Kapseln") or "Kapseln")
                     _enue = str(st.session_state.get(f"{_epfx}_nue",   "") or "")
@@ -2397,7 +2397,7 @@ def main():
                     _eko  = str(st.session_state.get(f"{_epfx}_kom",   "") or "")
                     if _en.strip() or any(x.strip() for x in [_enue, _emg, _emt, _eab, _ena]):
                         pdf_data.append({
-                            "name": _en, "_category": "Zusätzliche Ergänzungen",
+                            "name": _en, "_category": _cdisplay,
                             "Gesamt-dosierung": "", "Darreichungsform": _ef, "Pro Einnahme": "",
                             "Nüchtern": _enue, "Morgens": _emg, "Mittags": _emt,
                             "Abends": _eab, "Nachts": _ena, "Kommentar": _eko,
@@ -2425,7 +2425,7 @@ def main():
         infusion_schedule_data = {}
         inf = st.session_state.infusion_data
 
-        def _inf_row(label, key_prefix, tooltip, default_checked=False):
+        def _inf_row(label, key_prefix, tooltip, default_checked=False, show_icon=True):
             """Infusion checkbox with label+tooltip on left, timing in cols 1-7, comment in col 8."""
             cols = st.columns(INF_ROW_COLS)
             with cols[0]:
@@ -2434,10 +2434,12 @@ def main():
                     value = st.checkbox("", value=inf.get(key_prefix, default_checked),
                         key=f"inf_{key_prefix}_cb", label_visibility="collapsed")
                 with cb_cols[1]:
+                    _tt = tooltip.replace('\n', '&#10;').replace('"', '&quot;')
+                    _icon = f'<span class="info-icon" data-tooltip="{_tt}">ⓘ</span>' if show_icon else ''
                     st.markdown(
-                        f'<div style="display:flex;align-items:center;gap:4px;margin-top:8px;">' +
-                        f'<span style="font-size:14px;font-family:DM Sans,sans-serif;">{label}</span>' +
-                        f'<span class="info-icon" data-tooltip="{tooltip}">ⓘ</span></div>',
+                        f'<div style="display:flex;align-items:center;gap:4px;margin-top:8px;">'
+                        f'<span style="font-size:14px;font-family:DM Sans,sans-serif;">{label}</span>'
+                        f'{_icon}</div>',
                         unsafe_allow_html=True)
             infusion_schedule_data.update(
                 _inline_timing(value, key_prefix, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
@@ -2448,7 +2450,7 @@ def main():
             infusion_schedule_data[f"{key_prefix}_comment"] = comment
             return value
 
-        def _procain_row(label, key_prefix, tooltip):
+        def _procain_row(label, key_prefix, tooltip, show_icon=False):
             ml_key = f"{key_prefix}_ml"
             cols = st.columns(INF_ROW_COLS)
             with cols[0]:
@@ -2457,14 +2459,16 @@ def main():
                     value = st.checkbox(" ", value=inf.get(key_prefix, False),
                         key=f"inf_{key_prefix}_cb", label_visibility="collapsed")
                 with cb_cols[1]:
+                    _tt = tooltip.replace('\n', '&#10;').replace('"', '&quot;')
+                    _icon = f'<span class="info-icon" data-tooltip="{_tt}">ⓘ</span>' if show_icon else ''
                     st.markdown(
-                        f'<div style="display:flex;align-items:center;gap:4px;margin-top:8px;">' +
-                        f'<span style="font-size:14px;white-space:nowrap;font-family:DM Sans,sans-serif;">{label}</span>' +
-                        f'<span class="info-icon" data-tooltip="{tooltip}">ⓘ</span></div>',
+                        f'<div style="display:flex;align-items:center;gap:4px;margin-top:8px;">'
+                        f'<span style="font-size:14px;white-space:nowrap;font-family:DM Sans,sans-serif;">{label}</span>'
+                        f'{_icon}</div>',
                         unsafe_allow_html=True)
                 with cb_cols[2]:
-                    ml_val = st.text_input("ml", value=inf.get(ml_key, ""),
-                        key=ml_key, placeholder="ml",
+                    ml_val = st.text_input("", value=inf.get(ml_key, ""),
+                        key=ml_key, placeholder="",
                         label_visibility="collapsed", disabled=not value)
             infusion_schedule_data.update(
                 _inline_timing(value, key_prefix, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
@@ -2539,8 +2543,8 @@ def main():
 
         with st.expander("Sonstiges", expanded=inf.get("_sec_sonstiges_open", False)):
             _inf_sched_header()
-            mito_energy      = _inf_row("Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)", "std_mito_energy",     "Mito-Energy Behandlung mit Wirkbooster")
-            oxyvenierung     = _inf_row("RevitaOxy",                                         "std_oxyvenierung",    "Preis: 50 EUR\nOxyvenierung")
+            mito_energy      = _inf_row("Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)", "std_mito_energy",     "Mito-Energy Behandlung mit Wirkbooster", show_icon=False)
+            oxyvenierung     = _inf_row("RevitaOxy",                                         "std_oxyvenierung",    "Preis: 50 EUR\nOxyvenierung",            show_icon=False)
 
             # 2 additional free-text checkbox rows with timing
             def _inf_custom_row(idx):
@@ -2571,14 +2575,14 @@ def main():
 
         with st.expander("Standard Infusionen", expanded=inf.get("_sec_standard_open", False)):
             _inf_sched_header()
-            schwermetalltest     = _inf_row("Schwermetalltest mit DMSA und Ca EDTA",         "std_schwermetalltest","Test mit DMSA und Ca EDTA")
+            schwermetalltest     = _inf_row("Schwermetalltest mit DMSA und Ca EDTA",         "std_schwermetalltest","Test mit DMSA und Ca EDTA",         show_icon=False)
             procain_basen, procain_2percent = _procain_row("Procain Baseninfusion mit Magnesium", "std_procain_basen","Procain Baseninfusion mit Magnesium")
-            artemisinin          = _inf_row("Artemisinin Infusion mit 2x Lysin",             "std_artemisinin",     "Artemisinin Infusion mit 2x Lysin")
-            perioperative        = _inf_row("Perioperative Infusion (3 Infusionen)",         "std_perioperative",   "Perioperative Infusion (3 Infusionen)")
-            nerven_aufbau        = _inf_row("Nerven Aufbau Infusion",                        "std_nerven_aufbau",   "Nerven Aufbau Infusion")
-            anti_oxidantien      = _inf_row("Anti-Oxidantien Infusion",                      "std_anti_oxidantien", "Anti-Oxidantien Infusion")
-            aminoinfusion        = _inf_row("Aminoinfusion leaky gut (5-10)",                "std_aminoinfusion",   "Aminoinfusion leaky gut (5-10)")
-            infektions_infusion  = _inf_row("Infektions-Infusion / H2O2",                   "infektions_infusion", "Infektions-Infusion / H2O2")
+            artemisinin          = _inf_row("Artemisinin Infusion mit 2x Lysin",             "std_artemisinin",     "Artemisinin Infusion mit 2x Lysin",  show_icon=False)
+            perioperative        = _inf_row("Perioperative Infusion (3 Infusionen)",         "std_perioperative",   "Perioperative Infusion (3 Infusionen)",show_icon=False)
+            nerven_aufbau        = _inf_row("Nerven Aufbau Infusion",                        "std_nerven_aufbau",   "Nerven Aufbau Infusion",             show_icon=False)
+            anti_oxidantien      = _inf_row("Anti-Oxidantien Infusion",                      "std_anti_oxidantien", "Anti-Oxidantien Infusion",           show_icon=False)
+            aminoinfusion        = _inf_row("Aminoinfusion leaky gut (5-10)",                "std_aminoinfusion",   "Aminoinfusion leaky gut (5-10)",     show_icon=False)
+            infektions_infusion  = _inf_row("Infektions-Infusion / H2O2",                   "infektions_infusion", "Infektions-Infusion / H2O2",         show_icon=False)
 
         with st.expander("Extras", expanded=inf.get("_sec_zusaetze_open", False)):
             _inf_sched_header()
@@ -2713,10 +2717,10 @@ def main():
             inf_db = _ser(st.session_state.get("infusion_data",      {}))
             ern_db = _ser(st.session_state.get("ernaehrung_data",    {}))
 
-            # ── 4. Custom NEM extra rows → saved in ernaehrung_data blob ──
+            # ── 4. Per-category custom NEM extra rows → saved in ernaehrung_data blob ──
             _custom_nem_save = []
-            for _ei in range(1, 6):
-                _epfx = f"nem_extra{_ei}"
+            for _cslug, _cdisplay in st.session_state.get("_nem_cat_names", {}).items():
+                _epfx = f"nem_cx_{_cslug}"
                 _en   = str(st.session_state.get(f"{_epfx}_name",  "") or "")
                 _ef   = str(st.session_state.get(f"{_epfx}_form",  "Kapseln") or "Kapseln")
                 _enue = str(st.session_state.get(f"{_epfx}_nue",   "") or "")
@@ -2727,7 +2731,8 @@ def main():
                 _eko  = str(st.session_state.get(f"{_epfx}_kom",   "") or "")
                 if _en.strip() or any(x.strip() for x in [_enue, _emg, _emt, _eab, _ena]):
                     _custom_nem_save.append({
-                        "_idx": _ei, "name": _en, "Darreichungsform": _ef,
+                        "_cat": _cslug, "_cat_display": _cdisplay,
+                        "name": _en, "Darreichungsform": _ef,
                         "Nüchtern": _enue, "Morgens": _emg, "Mittags": _emt,
                         "Abends": _eab, "Nachts": _ena, "Kommentar": _eko,
                     })
