@@ -1174,11 +1174,6 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             ]:
                 if supplements.get(key + "_cb", False):
                     _add_row(lbl, key, "haupt", key)
-            for _mi in [1, 2, 3]:
-                _ml = clean_text(supplements.get(f"medikamente_line_{_mi}", "") or "")
-                if _ml and _ml not in seen_labels:
-                    seen_labels.add(_ml)
-                    rows.append((_ml, "", "", "", "", "", ""))
             for key, lbl in [
                 ("bio_isopath","Biologische Isopathische Therapie"),
                 ("akupunktur","Akupunktur"),
@@ -1267,7 +1262,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             if _cb and _txt and str(_txt).strip():
                 _add_row(str(_txt), f"inf_custom{idx}", "inf", None)
         for i in range(1, 4):
-            for sec in ("haupt","bio","gesp","inf"):
+            for sec in ("haupt","bio","med","gesp","inf"):
                 slug   = f"{sec}_extra{i}"
                 txt    = supplements.get(slug + "_text", "")
                 cb_val = supplements.get(slug + "_cb", True)
@@ -1539,9 +1534,6 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         "therapie_sonstiges_input":  "therapie_sonstiges",
         "zwischengespraech_4_checkbox":"zwischengespraech_4",
         "zwischengespraech_8_checkbox":"zwischengespraech_8",
-        "medikamente_line1_input": "medikamente_line_1",
-        "medikamente_line2_input": "medikamente_line_2",
-        "medikamente_line3_input": "medikamente_line_3",
         "notizen_text_input":      "notizen",
     }
     for wk, dk in _tp_map.items():
@@ -1562,7 +1554,11 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         if ik in _inf:
             st.session_state[f"inf_{ik}_cb"] = bool(_inf[ik])
         st.session_state[f"inf_{ik}_comment_inp"] = _inf.get(f"{ik}_comment", "")
-    if "zusaetze" in _inf: st.session_state["zusaetze_select"] = _inf["zusaetze"]
+    for _ei in range(1, 4):
+        _es = f"inf_extra{_ei}"
+        _saved_sel = _inf.get(f"{_es}_zusaetze_list", [])
+        if isinstance(_saved_sel, list):
+            st.session_state[f"{_es}_zusatz_select"] = _saved_sel
 
     # Seed diagnostik urgency widget keys so switching patients resets the radio/comment
     _URGENCY_OPTS = ["So schnell wie möglich", "Jederzeit möglich"]
@@ -1596,7 +1592,7 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
     # These persist in session_state across patient switches, so must be explicitly reset.
     _tp_data  = tp  or {}
     _inf_data = inf or {}
-    for sec in ["haupt", "bio"]:
+    for sec in ["haupt", "bio", "med"]:
         for i in range(1, 4):
             slug = f"{sec}_extra{i}"
             st.session_state[slug + "_cb"]         = bool(_tp_data.get(slug + "_cb", False))
@@ -1765,8 +1761,12 @@ def patient_inputs():
         tw_besprochen = st.radio("TW besprochen?", ["Ja","Nein"], horizontal=True,
             index=0 if default_tw_besprochen=="Ja" else 1, key="tw_besprochen_input")
 
-    bekannte_allergie = st.text_input("Bekannte Allergien:", value=default_allergie,
-        placeholder="Allergien...", key="allergie_input")
+    _al_c1, _al_c2 = st.columns([1.5, 6.5])
+    with _al_c1:
+        st.markdown('<div style="margin-top:1.9rem;font-weight:600;">Bekannte Allergien:</div>', unsafe_allow_html=True)
+    with _al_c2:
+        bekannte_allergie = st.text_input("", value=default_allergie,
+            placeholder="Allergien...", key="allergie_input", label_visibility="collapsed")
     diagnosen = st.text_area("Diagnosen", value=default_diagnosen, height=160,
         placeholder="Relevante Diagnosen...", key="diagnosen_input")
     ziele = st.text_input("Ziele der Behandlung sind:", value=default_ziele,
@@ -2071,12 +2071,7 @@ def main():
         with st.expander("Haupttherapien", expanded=tp.get("_sec_haupttherapien_open", False)):
             _sched_header()
             st.markdown('<div class="section-subheader">Medikamente</div>', unsafe_allow_html=True)
-            med_line1 = st.text_input("", value=tp.get("medikamente_line_1", ""), key="medikamente_line1_input",
-                placeholder="Medikament 1...", label_visibility="collapsed")
-            med_line2 = st.text_input("", value=tp.get("medikamente_line_2", ""), key="medikamente_line2_input",
-                placeholder="Medikament 2...", label_visibility="collapsed")
-            med_line3 = st.text_input("", value=tp.get("medikamente_line_3", ""), key="medikamente_line3_input",
-                placeholder="Medikament 3...", label_visibility="collapsed")
+            _extra_rows("med", "haupt", tp, patient["therapiebeginn"], patient["dauer"], therapieplan_schedule_data)
 
             st.markdown('<div class="section-subheader">Darm & Entgiftung</div>', unsafe_allow_html=True)
             darm_biofilm = _row(
@@ -2282,7 +2277,6 @@ def main():
             "ausleitung_inf": ausleitung_inf, "ausleitung_oral": ausleitung_oral,
             "infektion_bakt_cb": infektion_bakt, "infektion_bakt": infektion_bakt_detail,
             "infektion_virus_cb": infektion_virus, "infektion_virus": infektion_virus_detail,
-            "medikamente_line_1": med_line1, "medikamente_line_2": med_line2, "medikamente_line_3": med_line3,
             "mikronaehrstoffe": mikronaehrstoffe, "infusionsbehandlung": infusionsbehandlung,
             "neuraltherapie": neuraltherapie, "eigenblut": eigenblut, "ozontherapie": ozontherapie,
             "bio_isopath": bio_isopath, "akupunktur": akupunktur, "homoeopathie": homoeopathie,
@@ -2707,46 +2701,56 @@ def main():
 
         with st.expander("Extras", expanded=inf.get("_sec_zusaetze_open", False)):
             _inf_sched_header()
-            _extra_rows("inf", "inf", inf, patient["therapiebeginn"], patient["dauer"],
-                        infusion_schedule_data, row_cols=INF_ROW_COLS)
-
             import re as _re_inf
-            st.markdown("**Zusätze auswählen:**")
-            _ZUSATZ_ITEMS = [
+            _ZUSATZ_ALL = [
+                "Auf NaCl 50 ml", "Auf NaCl 100 ml", "Auf NaCl 250 ml", "Auf NaCl 500ml", "Auf 1000ml",
                 "Vit.B Komplex", "Vit.B6/B12/Folsäure", "Vit.D 300 kIE", "Vit.B3", "Biotin",
                 "Glycin", "Cholincitrat", "Zink inject", "Magnesium 400mg", "TAD (red.Glut.)",
-                "Arginin", "Glutamin", "Taurin", "Ornithin", "Prolin/Lysin", "Lysin",
-                "PC 1000mg", "Oxyvenierung", "Mito-Energy",
+                "Arginin", "Glutamin", "Taurin", "Ornithin", "Prolin/Lysin",
             ]
             _QTY_OPTS = ["1x", "2x", "3x", "4x", "5x"]
-            zusatz_items_data = {}
-            for _zit in _ZUSATZ_ITEMS:
-                _zslug = _re_inf.sub(r'[^a-z0-9]+', '_', _zit.lower()).strip('_')
-                _zcb_key = f"zusatz_{_zslug}_cb"
-                _zqt_key = f"zusatz_{_zslug}_qty"
-                _zc1, _zc2 = st.columns([3, 1])
-                with _zc1:
-                    _zchecked = st.checkbox(_zit, value=inf.get(_zcb_key, False), key=_zcb_key)
-                with _zc2:
-                    _saved_qty = inf.get(_zqt_key, "1x")
-                    _zqty = st.selectbox("", _QTY_OPTS,
-                        index=_QTY_OPTS.index(_saved_qty) if _saved_qty in _QTY_OPTS else 0,
-                        key=_zqt_key, label_visibility="collapsed", disabled=not _zchecked)
-                zusatz_items_data[_zit] = (_zchecked, _zqty if _zchecked else "")
+            for _ei in range(1, 4):
+                _slug   = f"inf_extra{_ei}"
+                _cb_key = _slug + "_cb"
+                _cols   = st.columns(INF_ROW_COLS)
+                with _cols[0]:
+                    _cb_c, _txt_c = st.columns([0.07, 0.93])
+                    with _cb_c:
+                        _checked = st.checkbox("", value=bool(inf.get(_cb_key, False)),
+                            key=_cb_key, label_visibility="collapsed")
+                    with _txt_c:
+                        _val = st.text_input("", value=inf.get(_slug + "_text", ""),
+                            key=_slug + "_text_input", placeholder=f"Zusatz {_ei}...",
+                            label_visibility="collapsed")
+                infusion_schedule_data.update(
+                    _inline_timing(_checked, _slug, patient["therapiebeginn"], patient["dauer"], "inf", inf, _cols))
+                infusion_schedule_data[_slug + "_text"] = _val
+                infusion_schedule_data[_cb_key] = _checked
 
-            st.markdown("**Auf NaCl:**")
-            _NACL_OPTS = ["Auf NaCl 50 ml", "Auf NaCl 100 ml", "Auf NaCl 250 ml", "Auf NaCl 500ml", "Auf 1000ml"]
-            nacl_data = {}
-            _nacl_cols = st.columns(len(_NACL_OPTS))
-            for _ni, _nopt in enumerate(_NACL_OPTS):
-                _nslug = _re_inf.sub(r'[^a-z0-9]+', '_', _nopt.lower()).strip('_')
-                _nkey = f"nacl_{_nslug}_cb"
-                with _nacl_cols[_ni]:
-                    nacl_data[_nopt] = st.checkbox(_nopt, value=inf.get(_nkey, False), key=_nkey)
-
-            # Build legacy zusaetze list for backward compat + PDF comment
-            zusaetze = [f"{n} ({q})" for n, (c, q) in zusatz_items_data.items() if c]
-            zusaetze += [n for n, c in nacl_data.items() if c]
+                # Zusätze multiselect under this row
+                _ms_key    = f"{_slug}_zusatz_select"
+                _saved_sel = inf.get(f"{_slug}_zusaetze_list", [])
+                if not isinstance(_saved_sel, list): _saved_sel = []
+                _selected  = st.multiselect("Zusätze auswählen", _ZUSATZ_ALL,
+                    default=[x for x in _saved_sel if x in _ZUSATZ_ALL],
+                    key=_ms_key, disabled=not _checked)
+                _qty_data = {}
+                if _selected:
+                    _q_cols = st.columns(min(len(_selected), 5))
+                    for _qi, _item in enumerate(_selected):
+                        _qslug = _re_inf.sub(r'[^a-z0-9]+', '_', _item.lower()).strip('_')
+                        _qkey  = f"{_slug}_zusatz_qty_{_qslug}"
+                        _sv_q  = inf.get(_qkey, "1x")
+                        with _q_cols[_qi % len(_q_cols)]:
+                            _qty_data[_item] = st.selectbox(_item, _QTY_OPTS,
+                                index=_QTY_OPTS.index(_sv_q) if _sv_q in _QTY_OPTS else 0,
+                                key=_qkey)
+                _comment = ", ".join(f"{n} ({q})" for n, q in _qty_data.items()) if _qty_data else ", ".join(_selected)
+                infusion_schedule_data[f"{_slug}_comment"]       = _comment
+                infusion_schedule_data[f"{_slug}_zusaetze_list"] = _selected
+                for _item, _q in _qty_data.items():
+                    _qs = _re_inf.sub(r'[^a-z0-9]+', '_', _item.lower()).strip('_')
+                    infusion_schedule_data[f"{_slug}_zusatz_qty_{_qs}"] = _q
 
         new_inf = {
             "inf_custom1_cb": inf_custom1_cb, "inf_custom1_text": inf_custom1_text,
@@ -2773,20 +2777,7 @@ def main():
             "perioperative": perioperative, "oxyvenierung": oxyvenierung,
             "nerven_aufbau": nerven_aufbau, "anti_oxidantien": anti_oxidantien,
             "infektions_infusion": infektions_infusion,
-            "zusaetze": zusaetze,
         }
-        # Save individual zusatz checkbox + qty + nacl checkbox fields from current widget state
-        import re as _re_inf2
-        for _zit in ["Vit.B Komplex","Vit.B6/B12/Folsäure","Vit.D 300 kIE","Vit.B3","Biotin",
-                     "Glycin","Cholincitrat","Zink inject","Magnesium 400mg","TAD (red.Glut.)",
-                     "Arginin","Glutamin","Taurin","Ornithin","Prolin/Lysin","Lysin",
-                     "PC 1000mg","Oxyvenierung","Mito-Energy"]:
-            _zs = _re_inf2.sub(r'[^a-z0-9]+', '_', _zit.lower()).strip('_')
-            new_inf[f"zusatz_{_zs}_cb"]  = bool(st.session_state.get(f"zusatz_{_zs}_cb", False))
-            new_inf[f"zusatz_{_zs}_qty"] = str(st.session_state.get(f"zusatz_{_zs}_qty", "1x"))
-        for _nopt in ["Auf NaCl 50 ml","Auf NaCl 100 ml","Auf NaCl 250 ml","Auf NaCl 500ml","Auf 1000ml"]:
-            _ns = _re_inf2.sub(r'[^a-z0-9]+', '_', _nopt.lower()).strip('_')
-            new_inf[f"nacl_{_ns}_cb"] = bool(st.session_state.get(f"nacl_{_ns}_cb", False))
         new_inf.update(infusion_schedule_data)
         st.session_state.infusion_data = new_inf
 
@@ -2810,7 +2801,7 @@ def main():
         _tp_notizen = st.session_state.therapieplan_data
         st.markdown('<div class="green-section-header">Notizen & Bemerkungen</div>', unsafe_allow_html=True)
         _notes_val = _tp_notizen.get("notizen", "")
-        notes = st.text_area("", value=_notes_val, height=500,
+        notes = st.text_area("", value=_notes_val, height=800,
             placeholder="Notizen und Bemerkungen...",
             key="notizen_text_input", label_visibility="collapsed")
         st.session_state.therapieplan_data["notizen"] = notes
