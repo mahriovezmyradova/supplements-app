@@ -121,6 +121,8 @@ class SupabaseDB:
                 'kt4_date':                 self._to_str(patient_data.get('kt4_date')) or None,
                 'kt12_date':                self._to_str(patient_data.get('kt12_date')) or None,
                 'kt24_date':                self._to_str(patient_data.get('kt24_date')) or None,
+                'ziele':                    str(patient_data.get('ziele', '')),
+                'aerztliche_kurzbewertung': str(patient_data.get('aerztliche_kurzbewertung', '')),
             }
 
             existing = self.supabase.table('patients') \
@@ -239,6 +241,8 @@ class SupabaseDB:
                 'kt4_date':                 p.get('kt4_date'),
                 'kt12_date':                p.get('kt12_date'),
                 'kt24_date':                p.get('kt24_date'),
+                'ziele':                    p.get('ziele', ''),
+                'aerztliche_kurzbewertung': p.get('aerztliche_kurzbewertung', ''),
             }
 
             # ── NEM prescriptions ─────────────────────────────

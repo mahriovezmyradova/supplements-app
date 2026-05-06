@@ -811,6 +811,14 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             text = text.replace(src, dst)
         return text
 
+    _ziele = clean_text(patient.get("ziele", "") or "")
+    if _ziele:
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(50, 6, "Ziele der Behandlung sind:", 0, 0)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.multi_cell(0, 6, _ziele, 0, "L")
+        pdf.ln(1)
+
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(35, 6, "Vor- und Nachname:", 0, 0)
     pdf.set_font("Helvetica", "", 10)
@@ -861,6 +869,14 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
     pdf.set_font("Helvetica", "", 10)
     pdf.multi_cell(0, 5, clean_text(patient.get("diagnosen", "") or "-"), 0, "L")
     pdf.ln(3)
+
+    _ak = clean_text(patient.get("aerztliche_kurzbewertung", "") or "")
+    if _ak:
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(0, 6, "Aerztliche Kurzbewertung:", 0, 1)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.multi_cell(0, 5, _ak, 0, "L")
+        pdf.ln(3)
 
     # ── Kontrolltermine ──────────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 10)
@@ -1378,6 +1394,8 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
     st.session_state["tw_besprochen_input"]               = pd_.get("tw_besprochen","Ja")
     st.session_state["allergie_input"]                    = pd_.get("allergie","")
     st.session_state["diagnosen_input"]                   = pd_.get("diagnosen","")
+    st.session_state["ziele_input"]                       = pd_.get("ziele","")
+    st.session_state["aerztliche_kurzbewertung_input"]    = pd_.get("aerztliche_kurzbewertung","")
     st.session_state["kontrolltermin_4_input"]            = bool(pd_.get("kontrolltermin_4",False))
     st.session_state["kontrolltermin_12_input"]           = bool(pd_.get("kontrolltermin_12",False))
     st.session_state["kontrolltermin_24_input"]           = bool(pd_.get("kontrolltermin_24",False))
@@ -1652,6 +1670,8 @@ def patient_inputs():
     default_tw_besprochen  = pdata.get("tw_besprochen", "Ja")
     default_allergie       = pdata.get("allergie", "")
     default_diagnosen      = pdata.get("diagnosen", "")
+    default_ziele          = pdata.get("ziele", "")
+    default_aerztliche     = pdata.get("aerztliche_kurzbewertung", "")
     default_kt4            = pdata.get("kontrolltermin_4", False)
     default_kt12           = pdata.get("kontrolltermin_12", False)
     default_kt24           = pdata.get("kontrolltermin_24", False)
@@ -1682,6 +1702,10 @@ def patient_inputs():
         placeholder="Bekannte Allergien eintragen...", key="allergie_input")
     diagnosen = st.text_area("Diagnosen", value=default_diagnosen, height=160,
         placeholder="Relevante Diagnosen...", key="diagnosen_input")
+    ziele = st.text_input("Ziele der Behandlung sind:", value=default_ziele,
+        placeholder="Behandlungsziele...", key="ziele_input")
+    aerztliche_kurzbewertung = st.text_area("Ärztliche Kurzbewertung", value=default_aerztliche, height=120,
+        placeholder="Ärztliche Kurzbewertung...", key="aerztliche_kurzbewertung_input")
 
     st.markdown("---")
     st.markdown("#### Kontrolltermine")
@@ -1727,7 +1751,9 @@ def patient_inputs():
         "patient": typed, "geburtsdatum": geburtsdatum, "geschlecht": geschlecht,
         "groesse": groesse, "gewicht": gewicht, "therapiebeginn": therapiebeginn,
         "dauer": dauer, "tw_besprochen": tw_besprochen, "allergie": bekannte_allergie,
-        "diagnosen": diagnosen, "kontrolltermin_4": kontrolltermin_4,
+        "diagnosen": diagnosen, "ziele": ziele,
+        "aerztliche_kurzbewertung": aerztliche_kurzbewertung,
+        "kontrolltermin_4": kontrolltermin_4,
         "kontrolltermin_12": kontrolltermin_12, "kontrolltermin_24": kontrolltermin_24,
         "kontrolltermin_kommentar": kontrolltermin_kommentar,
         "kt4_date": kt4_date, "kt12_date": kt12_date, "kt24_date": kt24_date,
@@ -2683,6 +2709,8 @@ def main():
                 "tw_besprochen":            patient.get("tw_besprochen","Ja"),
                 "allergie":                 patient.get("allergie",""),
                 "diagnosen":                patient.get("diagnosen",""),
+                "ziele":                    patient.get("ziele",""),
+                "aerztliche_kurzbewertung": patient.get("aerztliche_kurzbewertung",""),
                 "kontrolltermin_4":         bool(patient.get("kontrolltermin_4",False)),
                 "kontrolltermin_12":        bool(patient.get("kontrolltermin_12",False)),
                 "kontrolltermin_24":        bool(patient.get("kontrolltermin_24",False)),
