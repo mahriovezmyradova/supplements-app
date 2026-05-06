@@ -1,127 +1,54 @@
-# audio_processor.py
-import whisper
-import torch
-from transformers import BertTokenizer, BertModel
-import numpy as np
-import os
-import soundfile as sf
-import tempfile
+import requests
 import streamlit as st
-import re
+import os
 
-# Cache the models to avoid reloading
-@st.cache_resource
-def load_whisper_model():
-    """Load Whisper Small model (cached)"""
-    with st.spinner("Lade Whisper Modell... (dauert beim ersten Start)"):
-        return whisper.load_model("small")
 
-@st.cache_resource
-def load_bert_model():
-    """Load BERT model for extractive summarization (cached)"""
-    with st.spinner("Lade BERT Modell... (dauert beim ersten Start)"):
-        tokenizer = BertTokenizer.from_pretrained('bert-base-german-cased')
-        model = BertModel.from_pretrained('bert-base-german-cased')
-        return tokenizer, model
-
-def transcribe_audio(audio_bytes):
-    """
-    Transcribe audio using Whisper Small
-    Returns: transcript text and duration
-    """
+def _get_hf_token() -> str | None:
     try:
-        model = load_whisper_model()
-        
-        # Save audio bytes to temporary file
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-            tmp_file.write(audio_bytes)
-            tmp_path = tmp_file.name
-        
-        try:
-            # Transcribe with German language
-            result = model.transcribe(tmp_path, language="de")
-            transcript = result["text"]
-            
-            # Get audio duration
-            audio_data, sr = sf.read(tmp_path)
-            duration = len(audio_data) / sr
-            
-            return transcript, duration
-        finally:
-            # Clean up temp file
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-    except Exception as e:
-        st.error(f"Fehler bei der Transkription: {str(e)}")
-        return None, 0
+        tok = st.secrets.get("HF_TOKEN") or st.secrets.get("HUGGINGFACE_TOKEN")
+        if tok:
+            return tok
+    except Exception:
+        pass
+    return os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
 
-def extractive_summarize(text, num_sentences=4):
-    """
-    Extract key sentences using BERT embeddings
-    Optimized for German medical conversations
-    """
-    if not text or len(text.split('.')) < 2:
-        return text
-    
+
+def transcribe_with_huggingface(audio_bytes: bytes) -> str | None:
+    """Send raw audio bytes to HuggingFace Inference API (Whisper large-v3).
+    Returns the transcript string, or None on error.
+    No local model is loaded — zero extra memory on Streamlit Cloud."""
+    token = _get_hf_token()
+    if not token:
+        st.error(
+            "HuggingFace API Token fehlt. "
+            "Bitte HF_TOKEN in .streamlit/secrets.toml eintragen."
+        )
+        return None
+
+    API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
+    headers = {"Authorization": f"Bearer {token}"}
+
     try:
-        tokenizer, model = load_bert_model()
-        
-        # Clean and split text into sentences
-        text = text.replace('\n', ' ')
-        # German sentence splitting
-        sentences = []
-        for s in re.split(r'(?<=[.!?])\s+', text):
-            if s.strip():
-                sentences.append(s.strip())
-        
-        if len(sentences) <= num_sentences:
-            return text
-        
-        # Get embeddings for each sentence
-        sentence_embeddings = []
-        for sentence in sentences:
-            inputs = tokenizer(sentence, return_tensors='pt', 
-                              max_length=512, truncation=True, padding=True)
-            with torch.no_grad():
-                outputs = model(**inputs)
-                # Use [CLS] token embedding
-                embedding = outputs.last_hidden_state[:, 0, :].numpy()
-                sentence_embeddings.append(embedding)
-        
-        # Convert to numpy array
-        sentence_embeddings = np.array(sentence_embeddings).squeeze()
-        
-        # Select most important sentences (simplified TextRank approach)
-        # Use first sentence and then most diverse ones
-        selected_indices = [0]
-        
-        if len(sentences) > 1:
-            # Calculate similarities with first sentence
-            similarities = []
-            for i in range(1, len(sentences)):
-                sim = np.dot(sentence_embeddings[0], sentence_embeddings[i]) / (
-                    np.linalg.norm(sentence_embeddings[0]) * np.linalg.norm(sentence_embeddings[i])
-                )
-                similarities.append((i, sim))
-            
-            # Sort by lowest similarity (most different content)
-            similarities.sort(key=lambda x: x[1])
-            
-            # Add most different sentences
-            for i in range(min(num_sentences-1, len(similarities))):
-                selected_indices.append(similarities[i][0])
-        
-        selected_indices.sort()
-        summary = ' '.join([sentences[i] for i in selected_indices])
-        
-        return summary
-        
-    except Exception as e:
-        st.error(f"Fehler bei der Zusammenfassung: {str(e)}")
-        return text[:500] + "..."  # Fallback: return first 500 chars
+        resp = requests.post(API_URL, headers=headers, data=audio_bytes, timeout=60)
+    except requests.exceptions.Timeout:
+        st.error("Zeitüberschreitung — API hat nicht geantwortet. Bitte erneut versuchen.")
+        return None
+    except requests.exceptions.RequestException as e:
+        st.error(f"Netzwerkfehler: {e}")
+        return None
 
-# Test function to verify everything works
-if __name__ == "__main__":
-    print("✅ Audio Processor module loaded successfully")
-    print("   - Whisper available")
-    print("   - BERT available")
+    if resp.status_code == 200:
+        return resp.json().get("text", "")
+    elif resp.status_code == 503:
+        estimated = resp.json().get("estimated_time", 20)
+        st.warning(
+            f"Whisper-Modell wird gerade geladen (~{int(estimated)} s). "
+            "Bitte in einem Moment erneut transkribieren."
+        )
+        return None
+    elif resp.status_code == 401:
+        st.error("Ungültiger HuggingFace API Token.")
+        return None
+    else:
+        st.error(f"API-Fehler {resp.status_code}: {resp.text[:200]}")
+        return None

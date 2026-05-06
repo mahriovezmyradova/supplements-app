@@ -3,10 +3,4 @@ fpdf2
 pandas
 pillow
 supabase
-
-#openai-whisper==20231117
-#torch==2.1.0
-#transformers==4.35.0
-#soundfile==0.12.1
-#scipy==1.11.4
-#streamlit-audio-recorder==0.1.0  # Optional for easier recording
+requests

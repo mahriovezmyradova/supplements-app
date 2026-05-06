@@ -8,6 +8,7 @@ from PIL import Image
 import base64
 from supabase_db import SupabaseDB
 from auth import login_page, check_auth, logout, admin_panel
+from audio_processor import transcribe_with_huggingface
 
 def strip_dosage(name):
     """Remove trailing dosage/unit info from supplement name (e.g. '1000mg', '1 EL', '= 2g EPA/DHA')."""
@@ -1370,6 +1371,7 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
     st.session_state.therapieplan_data = tp  or {}
     st.session_state.ernaehrung_data   = ern or {}
     st.session_state.infusion_data     = inf or {}
+    st.session_state.gespräche_data    = (ern or {}).get("_conversations", [])
     st.session_state.last_loaded_patient  = name
     st.session_state.display_patient_name = name
     st.session_state.just_loaded_patient  = True
@@ -1797,6 +1799,7 @@ def main():
         st.session_state["therapieplan_data"] = {}
         st.session_state["ernaehrung_data"]   = {}
         st.session_state["infusion_data"]     = {}
+        st.session_state["gespräche_data"]    = []
         st.session_state["_reset_dropdown"]   = True
         st.rerun()
 
@@ -1902,7 +1905,7 @@ def main():
     st.markdown("---")
     _auth_user = check_auth()
     _is_admin = bool(_auth_user and _auth_user.get("role") == "admin")
-    _tab_labels = ["Therapieplan", "Nahrungsergänzungsmittel (NEM)", "Infusionstherapie"]
+    _tab_labels = ["Therapieplan", "Nahrungsergänzungsmittel (NEM)", "Infusionstherapie", "💬 Gespräche"]
     if _is_admin:
         _tab_labels.append("⚙️ Benutzerverwaltung")
     tabs = st.tabs(_tab_labels)
@@ -2680,6 +2683,101 @@ def main():
         _infusion_tab()
 
     # =========================================================
+    # TAB 3: GESPRÄCHE
+    # =========================================================
+    @st.fragment
+    def _gespräche_tab():
+        st.markdown('<div class="green-section-header">Gespräche & Notizen</div>', unsafe_allow_html=True)
+        st.caption("Gespräche aufnehmen, transkribieren und als Notiz speichern. Wird mit dem Patienten gespeichert.")
+
+        # Initialise from ernaehrung blob (persisted without a new DB table)
+        if "gespräche_data" not in st.session_state:
+            _loaded = st.session_state.get("ernaehrung_data", {}).get("_conversations", [])
+            st.session_state.gespräche_data = _loaded if _loaded else []
+
+        gespräche = st.session_state.gespräche_data
+
+        # Always show at least one empty entry
+        if not gespräche:
+            gespräche = [{"id": 0, "date": str(date.today()), "title": "", "transcript": ""}]
+            st.session_state.gespräche_data = gespräche
+
+        _changed = False
+        _delete_idx = None
+
+        for i, entry in enumerate(gespräche):
+            with st.container(border=True):
+                hc1, hc2, hc_del = st.columns([1.2, 2.5, 0.3])
+                with hc1:
+                    _raw_d = entry.get("date", str(date.today()))
+                    try:
+                        _dv = date.fromisoformat(_raw_d) if isinstance(_raw_d, str) else _raw_d
+                    except Exception:
+                        _dv = date.today()
+                    _nd = st.date_input("Datum", value=_dv, key=f"gesp_date_{entry['id']}",
+                                        format="DD.MM.YYYY", label_visibility="visible")
+                    entry["date"] = _nd.isoformat()
+                with hc2:
+                    _nt = st.text_input("Thema / Titel", value=entry.get("title", ""),
+                                        key=f"gesp_title_{entry['id']}",
+                                        placeholder="Gesprächsthema...", label_visibility="visible")
+                    entry["title"] = _nt
+                with hc_del:
+                    st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+                    if len(gespräche) > 1:
+                        if st.button("🗑", key=f"gesp_del_{entry['id']}", help="Eintrag löschen"):
+                            _delete_idx = i
+
+                # Transcript text area
+                _ntr = st.text_area("Transkript / Notizen", value=entry.get("transcript", ""),
+                                    height=140, key=f"gesp_transcript_{entry['id']}",
+                                    placeholder="Gesprächsinhalt, Notizen oder Transkript hier eintragen...",
+                                    label_visibility="visible")
+                entry["transcript"] = _ntr
+
+                # Audio recorder + transcribe button
+                ac1, ac2 = st.columns([3, 1])
+                with ac1:
+                    _audio = st.audio_input("Aufnahme", key=f"gesp_audio_{entry['id']}",
+                                            label_visibility="collapsed")
+                with ac2:
+                    st.markdown("<div style='margin-top:4px'></div>", unsafe_allow_html=True)
+                    if st.button("🎤 Transkribieren", key=f"gesp_transcribe_{entry['id']}",
+                                 use_container_width=True, disabled=_audio is None):
+                        with st.spinner("Transkribiere via HuggingFace Whisper..."):
+                            _result = transcribe_with_huggingface(_audio.read())
+                        if _result:
+                            _prev = entry.get("transcript", "").strip()
+                            entry["transcript"] = (_prev + "\n" + _result).strip() if _prev else _result
+                            st.session_state[f"gesp_transcript_{entry['id']}"] = entry["transcript"]
+                            _changed = True
+
+        if _delete_idx is not None:
+            gespräche.pop(_delete_idx)
+            if not gespräche:
+                gespräche = [{"id": 0, "date": str(date.today()), "title": "", "transcript": ""}]
+            st.session_state.gespräche_data = gespräche
+            st.rerun()
+
+        if _changed:
+            st.session_state.gespräche_data = gespräche
+            st.rerun()
+
+        # "+" button to add another conversation entry
+        st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+        if st.button("＋  Gespräch hinzufügen", key="gesp_add", use_container_width=False):
+            _next_id = max((e["id"] for e in gespräche), default=-1) + 1
+            gespräche.append({"id": _next_id, "date": str(date.today()), "title": "", "transcript": ""})
+            st.session_state.gespräche_data = gespräche
+            st.rerun()
+
+        # Persist latest widget values back to session state every render
+        st.session_state.gespräche_data = gespräche
+
+    with tabs[3]:
+        _gespräche_tab()
+
+    # =========================================================
     # SAVE HANDLER
     # =========================================================
     if save_button:
@@ -2782,6 +2880,7 @@ def main():
                             "Abends": _eab, "Nachts": _ena, "Kommentar": _eko,
                         })
             ern_db["_custom_nem_rows"] = _custom_nem_save
+            ern_db["_conversations"]   = st.session_state.get("gespräche_data", [])
 
             # Debug: print to console so errors are visible
             print(f"SAVING: patient={patient_for_db['patient']}, NEM={len(nem_to_save)} items")
@@ -2800,7 +2899,7 @@ def main():
                 st.error("❌ Fehler beim Speichern! Konsole prüfen.")
 
     if _is_admin:
-        with tabs[3]:
+        with tabs[4]:
             admin_panel(db)
 
     # ── Autosave (every 120s if data changed and patient already exists in DB) ──
@@ -2827,9 +2926,9 @@ def main():
                     if isinstance(v, (date,)): return v.isoformat()
                     return v
                 _as_patient = {k: _as_d(v) for k, v in _as_pd.items()}
-                _ok = save_patient_data(_as_patient, _as_nem, _as_tp,
-                                        _quick_ser(st.session_state.get("ernaehrung_data", {})),
-                                        _as_inf)
+                _as_ern = _quick_ser(st.session_state.get("ernaehrung_data", {}))
+                _as_ern["_conversations"] = st.session_state.get("gespräche_data", [])
+                _ok = save_patient_data(_as_patient, _as_nem, _as_tp, _as_ern, _as_inf)
                 if _ok:
                     st.session_state["_autosave_time"] = _now
                     st.session_state["_autosave_hash"] = _as_hash
