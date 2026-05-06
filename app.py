@@ -1759,12 +1759,27 @@ def main():
 
     # ── Push NEM prescription values into widget keys after patient load ──
     if st.session_state.pop("_pending_nem_push", False):
+        # First wipe ALL supplement widget keys so no previous patient's data bleeds through.
+        # Supplements not in the new patient's prescriptions must show empty/defaults.
+        for _, _r in df.iterrows():
+            if str(_r["id"]).startswith("CAT"):
+                continue
+            _rid, _sn = _r["id"], _r["name"]
+            st.session_state[f"{_rid}_gesamt_dosierung"] = ""
+            st.session_state[f"{_rid}_darreichungsform"] = DEFAULT_FORMS.get(_sn, "Kapseln")
+            st.session_state[f"{_rid}_pro_Einnahme"]     = ""
+            st.session_state[f"{_rid}_Nuechtern"]        = ""
+            st.session_state[f"{_rid}_Morgens"]          = ""
+            st.session_state[f"{_rid}_Mittags"]          = ""
+            st.session_state[f"{_rid}_Abends"]           = ""
+            st.session_state[f"{_rid}_Nachts"]           = ""
+            st.session_state[f"{_rid}_comment"]          = ""
+        # Then set this patient's actual values
         for presc in (st.session_state.nem_prescriptions or []):
             s_name = presc.get("name","")
             match = df[df["name"] == s_name]
             if match.empty: continue
             row_id = match.iloc[0]["id"]
-            # Force-set widget keys so they display loaded values on next render
             st.session_state[f"{row_id}_gesamt_dosierung"]  = presc.get("Gesamt-dosierung","")
             st.session_state[f"{row_id}_darreichungsform"]  = presc.get("Darreichungsform", DEFAULT_FORMS.get(s_name,"Kapseln"))
             st.session_state[f"{row_id}_pro_Einnahme"]      = presc.get("Pro Einnahme","")
@@ -2050,33 +2065,25 @@ def main():
             ernaehrung, ernaehrung_comment = tight_row("Ernährungsberatung", "ernaehrung", "ernaehrung_comment",
                 tp.get("ernaehrung", False), tp.get("ernaehrung_comment", ""))
 
-            # Sub-items of Ernährungsberatung — indented, disabled when ernaehrung unchecked
+            # Sub-items of Ernährungsberatung — no timing, wider comment field
             def sub_ern_row(label, key_cb, key_input, cb_val, input_val):
-                cols = st.columns(ROW_COLS)
-                with cols[0]:
-                    sub_c1, sub_c2 = st.columns([0.06, 0.94])
-                    with sub_c2:
-                        r1, r2 = st.columns([2.0, 2.0])
-                        with r1: val = st.checkbox(label, value=cb_val and ernaehrung, key=key_cb, disabled=not ernaehrung)
-                        with r2: txt = st.text_input("", key=key_input, value=input_val,
-                                                      placeholder="Kommentar...", label_visibility="collapsed",
-                                                      disabled=not ernaehrung)
-                therapieplan_schedule_data.update(
-                    _inline_timing(val and ernaehrung, key_cb, patient["therapiebeginn"], patient["dauer"], "bio", tp, cols))
+                _, sub_c2 = st.columns([0.04, 0.96])
+                with sub_c2:
+                    r1, r2 = st.columns([0.38, 0.62])
+                    with r1: val = st.checkbox(label, value=cb_val and ernaehrung, key=key_cb, disabled=not ernaehrung)
+                    with r2: txt = st.text_input("", key=key_input, value=input_val,
+                                                  placeholder="Kommentar...", label_visibility="collapsed",
+                                                  disabled=not ernaehrung)
                 return val, txt
 
-            def sub_ern_text(label, key_cb, key_input, key_slug, cb_val, input_val):
-                cols = st.columns(ROW_COLS)
-                with cols[0]:
-                    sub_c1, sub_c2 = st.columns([0.06, 0.94])
-                    with sub_c2:
-                        r1, r2 = st.columns([2.0, 2.0])
-                        with r1: checked = st.checkbox(label, value=cb_val and ernaehrung, key=key_cb, disabled=not ernaehrung)
-                        with r2: val = st.text_input("", value=input_val,
-                            key=key_input + "_input", placeholder="Details...",
-                            label_visibility="collapsed", disabled=not ernaehrung)
-                therapieplan_schedule_data.update(
-                    _inline_timing(checked and ernaehrung, key_slug, patient["therapiebeginn"], patient["dauer"], "bio", tp, cols))
+            def sub_ern_text(label, key_cb, key_input, cb_val, input_val):
+                _, sub_c2 = st.columns([0.04, 0.96])
+                with sub_c2:
+                    r1, r2 = st.columns([0.38, 0.62])
+                    with r1: checked = st.checkbox(label, value=cb_val and ernaehrung, key=key_cb, disabled=not ernaehrung)
+                    with r2: val = st.text_input("", value=input_val,
+                        key=key_input + "_input", placeholder="Details...",
+                        label_visibility="collapsed", disabled=not ernaehrung)
                 return checked, val
 
             st.markdown('<div style="border-left:2px solid rgba(38,96,65,0.25);margin-left:10px;padding-left:6px;">', unsafe_allow_html=True)
@@ -2091,10 +2098,10 @@ def main():
             basisch, basisch_comment = sub_ern_row("Basische Ernährung", "basisch", "basisch_comment",
                 tp.get("basisch", False), tp.get("basisch_comment", ""))
             naehrstoff_ausgleich, naehrstoff_ausgleich_comment = sub_ern_text(
-                "Nährstoffmängel ausgleichen:", "naehrstoff_ausgleich_cb", "naehrstoff_ausgleich", "naehrstoff_ausgleich",
+                "Nährstoffmängel ausgleichen:", "naehrstoff_ausgleich_cb", "naehrstoff_ausgleich",
                 tp.get("naehrstoff_ausgleich_cb", False), tp.get("naehrstoff_ausgleich", ""))
             therapie_sonstiges, therapie_sonstiges_comment = sub_ern_text(
-                "Sonstiges:", "therapie_sonstiges_cb", "therapie_sonstiges", "therapie_sonstiges",
+                "Sonstiges:", "therapie_sonstiges_cb", "therapie_sonstiges",
                 tp.get("therapie_sonstiges_cb", False), tp.get("therapie_sonstiges", ""))
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -2459,8 +2466,8 @@ def main():
                         unsafe_allow_html=True)
                 with cb_cols[2]:
                     ml_val = st.text_input("", value=inf.get(ml_key, ""),
-                        key=ml_key, placeholder="",
-                        label_visibility="collapsed", disabled=not value)
+                        key=ml_key, placeholder="ml",
+                        label_visibility="collapsed")
             infusion_schedule_data.update(
                 _inline_timing(value, key_prefix, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
             with cols[8]:
