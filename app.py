@@ -557,17 +557,6 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
     de_key      = f"{key_prefix}_{slug}_date_end"
     freq_key    = f"{key_prefix}_{slug}_freq"
 
-    # Skip all widget rendering when row is unchecked — preserves stored values,
-    # eliminates ~7 widgets per unchecked row (major perf win for infusion tab).
-    if not is_checked:
-        return {
-            w_start_key: data_store.get(w_start_key, "0"),
-            w_end_key:   data_store.get(w_end_key,   "0"),
-            ds_key:      data_store.get(ds_key),
-            de_key:      data_store.get(de_key),
-            freq_key:    data_store.get(freq_key, ""),
-        }
-
     # "0" = not filled (default); weeks 1..total follow
     week_opts = ["0"] + [str(w) for w in range(1, total_weeks + 1)]
 
@@ -2327,32 +2316,33 @@ def main():
                                 "Abends": abend_val, "Nachts": nacht_val, "Kommentar": comment
                             })
 
-                        # ── Per-category extra row ──────────────────────────
-                        _epfx = f"nem_cx_{_cat_slug}"
-                        if _do_nem_cat_seed:
-                            _ce = next((e for e in _custom_nem_loaded if e.get("_cat") == _cat_slug), None)
-                            st.session_state[f"{_epfx}_name"]  = _ce.get("name", "")          if _ce else ""
-                            st.session_state[f"{_epfx}_form"]  = _ce.get("Darreichungsform", "Kapseln") if _ce else "Kapseln"
-                            st.session_state[f"{_epfx}_nue"]   = _ce.get("Nüchtern", "")      if _ce else ""
-                            st.session_state[f"{_epfx}_morg"]  = _ce.get("Morgens", "")       if _ce else ""
-                            st.session_state[f"{_epfx}_mitt"]  = _ce.get("Mittags", "")       if _ce else ""
-                            st.session_state[f"{_epfx}_abend"] = _ce.get("Abends", "")        if _ce else ""
-                            st.session_state[f"{_epfx}_nacht"] = _ce.get("Nachts", "")        if _ce else ""
-                            st.session_state[f"{_epfx}_kom"]   = _ce.get("Kommentar", "")     if _ce else ""
-                        st.markdown('<div style="font-size:11px;color:#aaa;margin-top:6px;margin-bottom:2px;">+ Zusatz</div>', unsafe_allow_html=True)
-                        _ecols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
-                        _ecols[0].text_input("", key=f"{_epfx}_name", placeholder="Supplement...", label_visibility="collapsed")
-                        _ef_cx = st.session_state.get(f"{_epfx}_form", "Kapseln")
-                        _ecols[1].selectbox("", _extra_form_opts,
-                            index=_extra_form_opts.index(_ef_cx) if _ef_cx in _extra_form_opts else 0,
-                            key=f"{_epfx}_form", label_visibility="collapsed")
+                        # ── 3 per-category extra rows ───────────────────────
                         def _edi_cx(v, _d=_extra_dose_opts): return _d.index(v) if v in _d else 0
-                        _ecols[2].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nue","")),   key=f"{_epfx}_nue",   label_visibility="collapsed")
-                        _ecols[3].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_morg","")),  key=f"{_epfx}_morg",  label_visibility="collapsed")
-                        _ecols[4].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_mitt","")),  key=f"{_epfx}_mitt",  label_visibility="collapsed")
-                        _ecols[5].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_abend","")), key=f"{_epfx}_abend", label_visibility="collapsed")
-                        _ecols[6].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nacht","")), key=f"{_epfx}_nacht", label_visibility="collapsed")
-                        _ecols[7].text_input("", key=f"{_epfx}_kom", placeholder="Kommentar", label_visibility="collapsed")
+                        for _xi in range(1, 4):
+                            _epfx = f"nem_cx_{_cat_slug}_{_xi}"
+                            if _do_nem_cat_seed:
+                                _ce = next((e for e in _custom_nem_loaded
+                                            if e.get("_cat") == _cat_slug and e.get("_i") == _xi), None)
+                                st.session_state[f"{_epfx}_name"]  = _ce.get("name", "")                    if _ce else ""
+                                st.session_state[f"{_epfx}_form"]  = _ce.get("Darreichungsform", "Kapseln") if _ce else "Kapseln"
+                                st.session_state[f"{_epfx}_nue"]   = _ce.get("Nüchtern", "")               if _ce else ""
+                                st.session_state[f"{_epfx}_morg"]  = _ce.get("Morgens", "")                if _ce else ""
+                                st.session_state[f"{_epfx}_mitt"]  = _ce.get("Mittags", "")                if _ce else ""
+                                st.session_state[f"{_epfx}_abend"] = _ce.get("Abends", "")                 if _ce else ""
+                                st.session_state[f"{_epfx}_nacht"] = _ce.get("Nachts", "")                 if _ce else ""
+                                st.session_state[f"{_epfx}_kom"]   = _ce.get("Kommentar", "")              if _ce else ""
+                            _ecols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
+                            _ecols[0].text_input("", key=f"{_epfx}_name", placeholder="Supplement...", label_visibility="collapsed")
+                            _ef_cx = st.session_state.get(f"{_epfx}_form", "Kapseln")
+                            _ecols[1].selectbox("", _extra_form_opts,
+                                index=_extra_form_opts.index(_ef_cx) if _ef_cx in _extra_form_opts else 0,
+                                key=f"{_epfx}_form", label_visibility="collapsed")
+                            _ecols[2].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nue","")),   key=f"{_epfx}_nue",   label_visibility="collapsed")
+                            _ecols[3].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_morg","")),  key=f"{_epfx}_morg",  label_visibility="collapsed")
+                            _ecols[4].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_mitt","")),  key=f"{_epfx}_mitt",  label_visibility="collapsed")
+                            _ecols[5].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_abend","")), key=f"{_epfx}_abend", label_visibility="collapsed")
+                            _ecols[6].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nacht","")), key=f"{_epfx}_nacht", label_visibility="collapsed")
+                            _ecols[7].text_input("", key=f"{_epfx}_kom", placeholder="Kommentar", label_visibility="collapsed")
 
             if st.button("NEM PDF generieren", key="nem_pdf_button"):
                 # Build PDF data from session state keys so closed categories are included
@@ -2384,24 +2374,25 @@ def main():
                             or p["Kommentar"].strip()
                             or (p["Darreichungsform"] != DEFAULT_FORMS.get(name,"Kapseln") and p["Darreichungsform"].strip())):
                         pdf_data.append(p)
-                # Per-category custom extra rows
+                # Per-category custom extra rows (3 per category)
                 for _cslug, _cdisplay in st.session_state.get("_nem_cat_names", {}).items():
-                    _epfx = f"nem_cx_{_cslug}"
-                    _en   = str(st.session_state.get(f"{_epfx}_name",  "") or "")
-                    _ef   = str(st.session_state.get(f"{_epfx}_form",  "Kapseln") or "Kapseln")
-                    _enue = str(st.session_state.get(f"{_epfx}_nue",   "") or "")
-                    _emg  = str(st.session_state.get(f"{_epfx}_morg",  "") or "")
-                    _emt  = str(st.session_state.get(f"{_epfx}_mitt",  "") or "")
-                    _eab  = str(st.session_state.get(f"{_epfx}_abend", "") or "")
-                    _ena  = str(st.session_state.get(f"{_epfx}_nacht", "") or "")
-                    _eko  = str(st.session_state.get(f"{_epfx}_kom",   "") or "")
-                    if _en.strip() or any(x.strip() for x in [_enue, _emg, _emt, _eab, _ena]):
-                        pdf_data.append({
-                            "name": _en, "_category": _cdisplay,
-                            "Gesamt-dosierung": "", "Darreichungsform": _ef, "Pro Einnahme": "",
-                            "Nüchtern": _enue, "Morgens": _emg, "Mittags": _emt,
-                            "Abends": _eab, "Nachts": _ena, "Kommentar": _eko,
-                        })
+                    for _xi in range(1, 4):
+                        _epfx = f"nem_cx_{_cslug}_{_xi}"
+                        _en   = str(st.session_state.get(f"{_epfx}_name",  "") or "")
+                        _ef   = str(st.session_state.get(f"{_epfx}_form",  "Kapseln") or "Kapseln")
+                        _enue = str(st.session_state.get(f"{_epfx}_nue",   "") or "")
+                        _emg  = str(st.session_state.get(f"{_epfx}_morg",  "") or "")
+                        _emt  = str(st.session_state.get(f"{_epfx}_mitt",  "") or "")
+                        _eab  = str(st.session_state.get(f"{_epfx}_abend", "") or "")
+                        _ena  = str(st.session_state.get(f"{_epfx}_nacht", "") or "")
+                        _eko  = str(st.session_state.get(f"{_epfx}_kom",   "") or "")
+                        if _en.strip() or any(x.strip() for x in [_enue, _emg, _emt, _eab, _ena]):
+                            pdf_data.append({
+                                "name": _en, "_category": _cdisplay,
+                                "Gesamt-dosierung": "", "Darreichungsform": _ef, "Pro Einnahme": "",
+                                "Nüchtern": _enue, "Morgens": _emg, "Mittags": _emt,
+                                "Abends": _eab, "Nachts": _ena, "Kommentar": _eko,
+                            })
                 if pdf_data:
                     pdf_bytes = generate_pdf(patient, pdf_data, "NEM")
                     st.session_state.auto_download_pdf = {
@@ -2720,22 +2711,23 @@ def main():
             # ── 4. Per-category custom NEM extra rows → saved in ernaehrung_data blob ──
             _custom_nem_save = []
             for _cslug, _cdisplay in st.session_state.get("_nem_cat_names", {}).items():
-                _epfx = f"nem_cx_{_cslug}"
-                _en   = str(st.session_state.get(f"{_epfx}_name",  "") or "")
-                _ef   = str(st.session_state.get(f"{_epfx}_form",  "Kapseln") or "Kapseln")
-                _enue = str(st.session_state.get(f"{_epfx}_nue",   "") or "")
-                _emg  = str(st.session_state.get(f"{_epfx}_morg",  "") or "")
-                _emt  = str(st.session_state.get(f"{_epfx}_mitt",  "") or "")
-                _eab  = str(st.session_state.get(f"{_epfx}_abend", "") or "")
-                _ena  = str(st.session_state.get(f"{_epfx}_nacht", "") or "")
-                _eko  = str(st.session_state.get(f"{_epfx}_kom",   "") or "")
-                if _en.strip() or any(x.strip() for x in [_enue, _emg, _emt, _eab, _ena]):
-                    _custom_nem_save.append({
-                        "_cat": _cslug, "_cat_display": _cdisplay,
-                        "name": _en, "Darreichungsform": _ef,
-                        "Nüchtern": _enue, "Morgens": _emg, "Mittags": _emt,
-                        "Abends": _eab, "Nachts": _ena, "Kommentar": _eko,
-                    })
+                for _xi in range(1, 4):
+                    _epfx = f"nem_cx_{_cslug}_{_xi}"
+                    _en   = str(st.session_state.get(f"{_epfx}_name",  "") or "")
+                    _ef   = str(st.session_state.get(f"{_epfx}_form",  "Kapseln") or "Kapseln")
+                    _enue = str(st.session_state.get(f"{_epfx}_nue",   "") or "")
+                    _emg  = str(st.session_state.get(f"{_epfx}_morg",  "") or "")
+                    _emt  = str(st.session_state.get(f"{_epfx}_mitt",  "") or "")
+                    _eab  = str(st.session_state.get(f"{_epfx}_abend", "") or "")
+                    _ena  = str(st.session_state.get(f"{_epfx}_nacht", "") or "")
+                    _eko  = str(st.session_state.get(f"{_epfx}_kom",   "") or "")
+                    if _en.strip() or any(x.strip() for x in [_enue, _emg, _emt, _eab, _ena]):
+                        _custom_nem_save.append({
+                            "_cat": _cslug, "_cat_display": _cdisplay, "_i": _xi,
+                            "name": _en, "Darreichungsform": _ef,
+                            "Nüchtern": _enue, "Morgens": _emg, "Mittags": _emt,
+                            "Abends": _eab, "Nachts": _ena, "Kommentar": _eko,
+                        })
             ern_db["_custom_nem_rows"] = _custom_nem_save
 
             # Debug: print to console so errors are visible
