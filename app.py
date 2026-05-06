@@ -1025,6 +1025,13 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             if pdf.get_y() + row_height > pdf.page_break_trigger:
                 pdf.add_page()
                 _nem_col_headers()
+                if _nem_current_cat:
+                    pdf.set_fill_color(220, 235, 225)
+                    pdf.set_text_color(38, 96, 65)
+                    pdf.set_font("Helvetica", "B", 8)
+                    pdf.cell(table_width, 6, f"  {clean_text(_nem_current_cat)} (Fortsetzung)", 1, 1, "L", True)
+                    pdf.set_text_color(0, 0, 0)
+                    pdf.set_font("Helvetica", "", 9)
 
             start_x, start_y = pdf.get_x(), pdf.get_y()
             for i, (cell, width) in enumerate(zip(cells, widths)):
@@ -1164,10 +1171,14 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             for key, lbl in [
                 ("infektion_bakt","Infektionsbehandlung Bakterien"),
                 ("infektion_virus","Infektionsbehandlung Viren"),
-                ("medikamente_text","Medikamentenverordnung - Rezept"),
             ]:
                 if supplements.get(key + "_cb", False):
                     _add_row(lbl, key, "haupt", key)
+            for _mi in [1, 2, 3]:
+                _ml = clean_text(supplements.get(f"medikamente_line_{_mi}", "") or "")
+                if _ml and _ml not in seen_labels:
+                    seen_labels.add(_ml)
+                    rows.append((_ml, "", "", "", "", "", ""))
             for key, lbl in [
                 ("bio_isopath","Biologische Isopathische Therapie"),
                 ("akupunktur","Akupunktur"),
@@ -1190,13 +1201,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             for key, lbl, cmt in [
                 ("atemtherapie","Atemtherapie","atemtherapie_comment"),
                 ("bewegung","Bewegung","bewegung_comment"),
-                ("ernaehrung","Ernaehrungsberatung","ernaehrung_comment"),
                 ("aethetisch","Aesthetische Behandlung","aethetisch_comment"),
-                ("lowcarb","Low Carb Ernaehrung","lowcarb_comment"),
-                ("fasten","Intermittierendes Fasten","fasten_comment"),
-                ("krebsdiaet","Krebs Diaet","krebsdiaet_comment"),
-                ("ketogene","Ketogene Ernaehrung","ketogene_comment"),
-                ("basisch","Basische Ernaehrung","basisch_comment"),
             ]:
                 if _prescribed(key):
                     _add_row(lbl, key, "bio", cmt)
@@ -1205,10 +1210,31 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                                               ("Faeden","aethetisch_faeden"),("Hyaloron","aethetisch_hyaloron")]
                                if supplements.get(k)]
                         if sub: rows[-1] = (rows[-1][0], clean_text(", ".join(sub)+(" | "+rows[-1][1] if rows[-1][1] else ""))) + rows[-1][2:]
-            for key, lbl in [("naehrstoff_ausgleich","Naehrstoffmaengel ausgleichen"),
-                              ("therapie_sonstiges","Sonstiges")]:
-                if supplements.get(key + "_cb", False):
-                    _add_row(lbl, key, "bio", key)
+            # Ernaehrungsberatung + sub-items as nested rows
+            if _prescribed("ernaehrung"):
+                _add_row("Ernaehrungsberatung", "ernaehrung", "bio", "ernaehrung_comment")
+                _ern_ref = rows[-1] if rows else None
+                _ern_ws, _ern_we, _ern_ds, _ern_de, _ern_fr = (
+                    (_ern_ref[2], _ern_ref[3], _ern_ref[4], _ern_ref[5], _ern_ref[6])
+                    if _ern_ref else ("","","","",""))
+                for _sk, _slbl, _scmt in [
+                    ("lowcarb","  -> Low Carb Ernaehrung","lowcarb_comment"),
+                    ("fasten","  -> Intermittierendes Fasten","fasten_comment"),
+                    ("krebsdiaet","  -> Krebs Diaet","krebsdiaet_comment"),
+                    ("ketogene","  -> Ketogene Ernaehrung","ketogene_comment"),
+                    ("basisch","  -> Basische Ernaehrung","basisch_comment"),
+                ]:
+                    if _prescribed(_sk) and _slbl not in seen_labels:
+                        seen_labels.add(_slbl)
+                        rows.append((clean_text(_slbl), clean_text(supplements.get(_scmt,"") or ""),
+                                     _ern_ws, _ern_we, _ern_ds, _ern_de, _ern_fr))
+                for _sk, _slbl in [("naehrstoff_ausgleich","  -> Naehrstoffmaengel ausgleichen"),
+                                    ("therapie_sonstiges","  -> Sonstiges")]:
+                    if supplements.get(_sk + "_cb", False) and _slbl not in seen_labels:
+                        seen_labels.add(_slbl)
+                        _detail = clean_text(supplements.get(_sk, "") or "")
+                        rows.append((clean_text(_slbl), _detail,
+                                     _ern_ws, _ern_we, _ern_ds, _ern_de, _ern_fr))
             for key, lbl in [("zwischengespraech_4","Zwischengespraech 4 Wochen (1/2h)"),
                               ("zwischengespraech_8","Zwischengespraech 8 Wochen (1/2h)")]:
                 if _prescribed(key):
@@ -1231,7 +1257,6 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             ("perioperative","Perioperative Infusion"),
             ("nerven_aufbau","Nerven Aufbau Infusion"),
             ("anti_oxidantien","Anti-Oxidantien Infusion"),
-            ("aminoinfusion","Aminoinfusion leaky gut"),
             ("infektions_infusion","Infektions-Infusion / H2O2"),
         ]:
             if _prescribed(key):
@@ -1253,6 +1278,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
         LH = 5
         tw = [110, 60, TW - 170]
         th = ["Verordnung / Untersuchung", "Zeitpunkt / Häufigkeit", "Kommentar"]
+        _cur_sect = [None]
 
         def _render_col_headers():
             pdf.set_fill_color(38, 96, 65)
@@ -1264,6 +1290,14 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Helvetica", "", 8)
 
+        def _section_divider_raw(title, suffix=""):
+            pdf.set_fill_color(220, 235, 225)
+            pdf.set_text_color(38, 96, 65)
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.cell(TW, 6, f"  {title}{suffix}", 1, 1, "L", True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Helvetica", "", 8)
+
         def _render_row_t(cells):
             def _nlines(txt, w):
                 return max(1, int(pdf.get_string_width(txt) / max(1, w - 4)) + 1) if txt else 1
@@ -1272,6 +1306,8 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             if pdf.get_y() + rh > pdf.page_break_trigger:
                 pdf.add_page()
                 _render_col_headers()
+                if _cur_sect[0]:
+                    _section_divider_raw(_cur_sect[0], " (Fortsetzung)")
             sx, sy = pdf.get_x(), pdf.get_y()
             for cell, width in zip(cells, tw):
                 x = pdf.get_x()
@@ -1284,15 +1320,11 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             pdf.set_xy(sx, sy + rh)
 
         def _section_divider(title):
+            _cur_sect[0] = title
             if pdf.get_y() + 11 > pdf.page_break_trigger:
                 pdf.add_page()
                 _render_col_headers()
-            pdf.set_fill_color(220, 235, 225)
-            pdf.set_text_color(38, 96, 65)
-            pdf.set_font("Helvetica", "B", 8)
-            pdf.cell(TW, 6, f"  {title}", 1, 1, "L", True)
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_font("Helvetica", "", 8)
+            _section_divider_raw(title)
 
         def _week_label(ws_i, we_i, ds, de):
             wk_txt = f"Woche {ws_i}" if ws_i == we_i else f"Woche {ws_i}-{we_i}"
@@ -1360,6 +1392,36 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
 
 
 # =========================================================
+# PDF — NOTIZEN
+# =========================================================
+def generate_notes_pdf(patient, notes_text):
+    patient_name = patient.get("patient", "") if patient else ""
+    pdf = PDF("P", "mm", "A4",
+              tab_title="THERAPIEKONZEPT - NOTIZEN",
+              patient_name=patient_name)
+    pdf.alias_nb_pages()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    def _cn(t):
+        if not t: return ""
+        for src, dst in [('•','-'),('–','-'),('—','-'),('−','-')]:
+            t = str(t).replace(src, dst)
+        return t
+
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(40, 6, "Patient:", 0, 0)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, _cn(patient_name), 0, 1)
+    pdf.ln(6)
+
+    pdf.set_font("Helvetica", "", 10)
+    for line in (_cn(notes_text) or "").split("\n"):
+        pdf.multi_cell(0, 6, line, 0, "L")
+    return bytes(pdf.output(dest="S"))
+
+
+# =========================================================
 # PATIENT INPUTS
 # =========================================================
 def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
@@ -1403,6 +1465,9 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
     if pd_.get("kt4_date"):  st.session_state["kt4_date_input"]  = _dt(pd_.get("kt4_date"))
     if pd_.get("kt12_date"): st.session_state["kt12_date_input"] = _dt(pd_.get("kt12_date"))
     if pd_.get("kt24_date"): st.session_state["kt24_date_input"] = _dt(pd_.get("kt24_date"))
+    st.session_state["kt4_zielparameter_input"]  = pd_.get("kt4_zielparameter", "")
+    st.session_state["kt12_zielparameter_input"] = pd_.get("kt12_zielparameter", "")
+    st.session_state["kt24_zielparameter_input"] = pd_.get("kt24_zielparameter", "")
 
     # ── Therapieplan widgets — map widget_key → tp dict key ──
     _tp = tp or {}
@@ -1434,8 +1499,6 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         "infektion_bakt_txt":        "infektion_bakt",
         "infektion_virus_cb":        "infektion_virus_cb",
         "infektion_virus_txt":       "infektion_virus",
-        "medikamente_text_cb":       "medikamente_text_cb",
-        "medikamente_text_txt":      "medikamente_text",
         "bio_isopath_checkbox":      "bio_isopath",
         "akupunktur_checkbox":       "akupunktur",
         "homoeopathie_checkbox":     "homoeopathie",
@@ -1476,6 +1539,10 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         "therapie_sonstiges_input":  "therapie_sonstiges",
         "zwischengespraech_4_checkbox":"zwischengespraech_4",
         "zwischengespraech_8_checkbox":"zwischengespraech_8",
+        "medikamente_line1_input": "medikamente_line_1",
+        "medikamente_line2_input": "medikamente_line_2",
+        "medikamente_line3_input": "medikamente_line_3",
+        "notizen_text_input":      "notizen",
     }
     for wk, dk in _tp_map.items():
         if dk in _tp:
@@ -1490,7 +1557,7 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
                "revita_infection","revita_joint","std_mito_energy","std_oxyvenierung",
                "std_schwermetalltest","std_procain_basen","std_artemisinin",
                "std_perioperative","std_nerven_aufbau",
-               "std_anti_oxidantien","std_aminoinfusion",
+               "std_anti_oxidantien",
                "infektions_infusion"]:
         if ik in _inf:
             st.session_state[f"inf_{ik}_cb"] = bool(_inf[ik])
@@ -1698,8 +1765,8 @@ def patient_inputs():
         tw_besprochen = st.radio("TW besprochen?", ["Ja","Nein"], horizontal=True,
             index=0 if default_tw_besprochen=="Ja" else 1, key="tw_besprochen_input")
 
-    bekannte_allergie = st.text_area("Bekannte Allergien", value=default_allergie, height=90,
-        placeholder="Bekannte Allergien eintragen...", key="allergie_input")
+    bekannte_allergie = st.text_input("Bekannte Allergien:", value=default_allergie,
+        placeholder="Allergien...", key="allergie_input")
     diagnosen = st.text_area("Diagnosen", value=default_diagnosen, height=160,
         placeholder="Relevante Diagnosen...", key="diagnosen_input")
     ziele = st.text_input("Ziele der Behandlung sind:", value=default_ziele,
@@ -1709,36 +1776,41 @@ def patient_inputs():
 
     st.markdown("---")
     st.markdown("#### Kontrolltermine")
-    col1,col2,col3 = st.columns(3)
     _total_weeks = int(dauer) * 4
     _kt4_ok  = _total_weeks >= 4
     _kt12_ok = _total_weeks >= 12
     _kt24_ok = _total_weeks >= 24
-    with col1:
-        kontrolltermin_4  = st.checkbox("4 Wochen",  value=default_kt4  and _kt4_ok,  key="kontrolltermin_4_input",  disabled=not _kt4_ok,  help=None if _kt4_ok  else f"Dauer {dauer} Mon. zu kurz")
-    with col2:
-        kontrolltermin_12 = st.checkbox("12 Wochen", value=default_kt12 and _kt12_ok, key="kontrolltermin_12_input", disabled=not _kt12_ok, help=None if _kt12_ok else f"Dauer {dauer} Mon. zu kurz")
-    with col3:
-        kontrolltermin_24 = st.checkbox("24 Wochen", value=default_kt24 and _kt24_ok, key="kontrolltermin_24_input", disabled=not _kt24_ok, help=None if _kt24_ok else f"Dauer {dauer} Mon. zu kurz")
-    kontrolltermin_kommentar = st.text_area("Kommentar:", value=default_kt_kommentar, height=100,
-        placeholder="Kommentar zu Kontrollterminen...", key="kontrolltermin_kommentar_input")
-
-    # Editable Kontrolltermin dates (shown only when checked)
+    default_kt4_zp  = pdata.get("kt4_zielparameter", "")
+    default_kt12_zp = pdata.get("kt12_zielparameter", "")
+    default_kt24_zp = pdata.get("kt24_zielparameter", "")
     kt4_date = kt12_date = kt24_date = None
-    if kontrolltermin_4 or kontrolltermin_12 or kontrolltermin_24:
-        kd1, kd2, kd3 = st.columns(3)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        kontrolltermin_4 = st.checkbox("4 Wochen", value=default_kt4 and _kt4_ok, key="kontrolltermin_4_input",
+            disabled=not _kt4_ok, help=None if _kt4_ok else f"Dauer {dauer} Mon. zu kurz")
         if kontrolltermin_4:
-            with kd1:
-                kt4_date = st.date_input("Datum 4 Wochen", value=therapiebeginn + timedelta(weeks=4),
-                    format="DD.MM.YYYY", key="kt4_date_input")
+            kt4_date = st.date_input("Datum 4 Wochen", value=therapiebeginn + timedelta(weeks=4),
+                format="DD.MM.YYYY", key="kt4_date_input")
+        kt4_zielparameter = st.text_input("Besondere Zielparameter", value=default_kt4_zp,
+            key="kt4_zielparameter_input", placeholder="Zielparameter...", label_visibility="visible")
+    with col2:
+        kontrolltermin_12 = st.checkbox("12 Wochen", value=default_kt12 and _kt12_ok, key="kontrolltermin_12_input",
+            disabled=not _kt12_ok, help=None if _kt12_ok else f"Dauer {dauer} Mon. zu kurz")
         if kontrolltermin_12:
-            with kd2:
-                kt12_date = st.date_input("Datum 12 Wochen", value=therapiebeginn + timedelta(weeks=12),
-                    format="DD.MM.YYYY", key="kt12_date_input")
+            kt12_date = st.date_input("Datum 12 Wochen", value=therapiebeginn + timedelta(weeks=12),
+                format="DD.MM.YYYY", key="kt12_date_input")
+        kt12_zielparameter = st.text_input("Besondere Zielparameter", value=default_kt12_zp,
+            key="kt12_zielparameter_input", placeholder="Zielparameter...", label_visibility="visible")
+    with col3:
+        kontrolltermin_24 = st.checkbox("24 Wochen", value=default_kt24 and _kt24_ok, key="kontrolltermin_24_input",
+            disabled=not _kt24_ok, help=None if _kt24_ok else f"Dauer {dauer} Mon. zu kurz")
         if kontrolltermin_24:
-            with kd3:
-                kt24_date = st.date_input("Datum 24 Monate", value=therapiebeginn + timedelta(weeks=96),
-                    format="DD.MM.YYYY", key="kt24_date_input")
+            kt24_date = st.date_input("Datum 24 Monate", value=therapiebeginn + timedelta(weeks=96),
+                format="DD.MM.YYYY", key="kt24_date_input")
+        kt24_zielparameter = st.text_input("Besondere Zielparameter", value=default_kt24_zp,
+            key="kt24_zielparameter_input", placeholder="Zielparameter...", label_visibility="visible")
+    kontrolltermin_kommentar = st.text_area("Kommentar:", value=default_kt_kommentar, height=80,
+        placeholder="Kommentar zu Kontrollterminen...", key="kontrolltermin_kommentar_input")
 
     st.markdown("---")
     therapy_progress_bar(
@@ -1757,6 +1829,9 @@ def patient_inputs():
         "kontrolltermin_12": kontrolltermin_12, "kontrolltermin_24": kontrolltermin_24,
         "kontrolltermin_kommentar": kontrolltermin_kommentar,
         "kt4_date": kt4_date, "kt12_date": kt12_date, "kt24_date": kt24_date,
+        "kt4_zielparameter": kt4_zielparameter,
+        "kt12_zielparameter": kt12_zielparameter,
+        "kt24_zielparameter": kt24_zielparameter,
     }
 
 
@@ -1902,7 +1977,7 @@ def main():
     st.markdown("---")
     _auth_user = check_auth()
     _is_admin = bool(_auth_user and _auth_user.get("role") == "admin")
-    _tab_labels = ["Therapieplan", "Nahrungsergänzungsmittel (NEM)", "Infusionstherapie"]
+    _tab_labels = ["Therapieplan", "Nahrungsergänzungsmittel (NEM)", "Infusionstherapie", "Notizen"]
     if _is_admin:
         _tab_labels.append("⚙️ Benutzerverwaltung")
     tabs = st.tabs(_tab_labels)
@@ -1995,6 +2070,14 @@ def main():
         # ---- SECTION 2: Haupttherapien ----
         with st.expander("Haupttherapien", expanded=tp.get("_sec_haupttherapien_open", False)):
             _sched_header()
+            st.markdown('<div class="section-subheader">Medikamente</div>', unsafe_allow_html=True)
+            med_line1 = st.text_input("", value=tp.get("medikamente_line_1", ""), key="medikamente_line1_input",
+                placeholder="Medikament 1...", label_visibility="collapsed")
+            med_line2 = st.text_input("", value=tp.get("medikamente_line_2", ""), key="medikamente_line2_input",
+                placeholder="Medikament 2...", label_visibility="collapsed")
+            med_line3 = st.text_input("", value=tp.get("medikamente_line_3", ""), key="medikamente_line3_input",
+                placeholder="Medikament 3...", label_visibility="collapsed")
+
             st.markdown('<div class="section-subheader">Darm & Entgiftung</div>', unsafe_allow_html=True)
             darm_biofilm = _row(
                 "Darm - Biofilmentfernung nach www.regenbogenkreis.de (Express-Darmkur 4 Tageskur)",
@@ -2054,11 +2137,6 @@ def main():
                 "infektion_virus_cb", "infektion_virus",
                 tp.get("infektion_virus_cb", False), tp.get("infektion_virus", ""),
                 "infektion_virus", "haupt")
-            medikamente_text, medikamente_text_detail = _cb_text_row(
-                "Medikamentenverordnung - Rezept für",
-                "medikamente_text_cb", "medikamente_text",
-                tp.get("medikamente_text_cb", False), tp.get("medikamente_text", ""),
-                "medikamente_text", "haupt")
             _extra_rows("haupt", "haupt", tp, patient["therapiebeginn"], patient["dauer"], therapieplan_schedule_data)
 
         # ---- SECTION 3: Biologische & Komplementäre Therapien ----
@@ -2107,28 +2185,34 @@ def main():
                 tp.get("atemtherapie", False), tp.get("atemtherapie_comment", ""))
             bewegung, bewegung_comment = tight_row("Bewegung", "bewegung", "bewegung_comment",
                 tp.get("bewegung", False), tp.get("bewegung_comment", ""))
-            ernaehrung, ernaehrung_comment = tight_row("Ernährungsberatung", "ernaehrung", "ernaehrung_comment",
-                tp.get("ernaehrung", False), tp.get("ernaehrung_comment", ""))
 
-            # Sub-items of Ernährungsberatung — no timing, wider comment field
+            # Check if any sub-item was previously saved → auto-check parent
+            _sub_ern_keys = ["lowcarb","fasten","krebsdiaet","ketogene","basisch",
+                             "naehrstoff_ausgleich_cb","therapie_sonstiges_cb"]
+            _any_sub_ern_saved = any(tp.get(k, False) for k in _sub_ern_keys)
+            _ernaehrung_default = tp.get("ernaehrung", False) or _any_sub_ern_saved
+
+            ernaehrung, ernaehrung_comment = tight_row("Ernährungsberatung", "ernaehrung", "ernaehrung_comment",
+                _ernaehrung_default, tp.get("ernaehrung_comment", ""))
+
+            # Sub-items — always enabled so user can check them independently (parent auto-checks)
             def sub_ern_row(label, key_cb, key_input, cb_val, input_val):
                 _, sub_c2 = st.columns([0.04, 0.96])
                 with sub_c2:
                     r1, r2 = st.columns([0.38, 0.62])
-                    with r1: val = st.checkbox(label, value=cb_val and ernaehrung, key=key_cb, disabled=not ernaehrung)
+                    with r1: val = st.checkbox(label, value=bool(cb_val), key=key_cb)
                     with r2: txt = st.text_input("", key=key_input, value=input_val,
-                                                  placeholder="Kommentar...", label_visibility="collapsed",
-                                                  disabled=not ernaehrung)
+                                                  placeholder="Kommentar...", label_visibility="collapsed")
                 return val, txt
 
             def sub_ern_text(label, key_cb, key_input, cb_val, input_val):
                 _, sub_c2 = st.columns([0.04, 0.96])
                 with sub_c2:
                     r1, r2 = st.columns([0.38, 0.62])
-                    with r1: checked = st.checkbox(label, value=cb_val and ernaehrung, key=key_cb, disabled=not ernaehrung)
+                    with r1: checked = st.checkbox(label, value=bool(cb_val), key=key_cb)
                     with r2: val = st.text_input("", value=input_val,
                         key=key_input + "_input", placeholder="Details...",
-                        label_visibility="collapsed", disabled=not ernaehrung)
+                        label_visibility="collapsed")
                 return checked, val
 
             st.markdown('<div style="border-left:2px solid rgba(38,96,65,0.25);margin-left:10px;padding-left:6px;">', unsafe_allow_html=True)
@@ -2149,6 +2233,11 @@ def main():
                 "Sonstiges:", "therapie_sonstiges_cb", "therapie_sonstiges",
                 tp.get("therapie_sonstiges_cb", False), tp.get("therapie_sonstiges", ""))
             st.markdown('</div>', unsafe_allow_html=True)
+            # Auto-check parent if any sub-item is checked
+            _any_sub_now = any([lowcarb, fasten, krebsdiaet, ketogene, basisch,
+                                naehrstoff_ausgleich, therapie_sonstiges])
+            if _any_sub_now and not ernaehrung:
+                ernaehrung = True
 
             # Ästhetische Behandlung — inline timing + comment (2:2 split) + sub-checkboxes
             aet_cols = st.columns(ROW_COLS)
@@ -2193,7 +2282,7 @@ def main():
             "ausleitung_inf": ausleitung_inf, "ausleitung_oral": ausleitung_oral,
             "infektion_bakt_cb": infektion_bakt, "infektion_bakt": infektion_bakt_detail,
             "infektion_virus_cb": infektion_virus, "infektion_virus": infektion_virus_detail,
-            "medikamente_text_cb": medikamente_text, "medikamente_text": medikamente_text_detail,
+            "medikamente_line_1": med_line1, "medikamente_line_2": med_line2, "medikamente_line_3": med_line3,
             "mikronaehrstoffe": mikronaehrstoffe, "infusionsbehandlung": infusionsbehandlung,
             "neuraltherapie": neuraltherapie, "eigenblut": eigenblut, "ozontherapie": ozontherapie,
             "bio_isopath": bio_isopath, "akupunktur": akupunktur, "homoeopathie": homoeopathie,
@@ -2215,6 +2304,7 @@ def main():
             "aethetisch_prp": aethetisch_prp, "aethetisch_faeden": aethetisch_faeden,
             "aethetisch_hyaloron": aethetisch_hyaloron, "aethetisch_comment": aethetisch_comment,
             "zwischengespraech_4": zwischengespraech_4, "zwischengespraech_8": zwischengespraech_8,
+            "notizen": st.session_state.therapieplan_data.get("notizen", ""),
         }
         new_tp.update(therapieplan_schedule_data)
         st.session_state.therapieplan_data = new_tp
@@ -2296,104 +2386,94 @@ def main():
                             st.session_state[f"{_epfx}_nacht"] = _ce.get("Nachts", "")                 if _ce else ""
                             st.session_state[f"{_epfx}_kom"]   = _ce.get("Kommentar", "")              if _ce else ""
 
-                    # Toggle button — only render supplements when open
-                    _cat_ex_key = f"_cat_ex_{_cat_slug}"
-                    _is_open = st.session_state.get(_cat_ex_key, False)
-                    _btn_icon = "▼" if _is_open else "▶"
-                    if st.button(f"{_btn_icon}  {category_name}", key=f"_cat_btn_{_cat_slug}", use_container_width=True):
-                        st.session_state[_cat_ex_key] = not _is_open
-                        st.rerun()
+                    with st.expander(category_name, expanded=False):
+                        _seen_stripped = set()
+                        for row in supplement_rows:
+                            supplement_name = row["name"]
+                            _stripped = strip_dosage(supplement_name)
+                            if _stripped in _seen_stripped:
+                                continue
+                            _seen_stripped.add(_stripped)
+                            cols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
+                            cols[0].markdown(_stripped)
 
-                    if not _is_open:
-                        continue
+                            gd_key   = f"{row['id']}_gesamt_dosierung"
+                            form_key = f"{row['id']}_darreichungsform"
+                            pe_key   = f"{row['id']}_pro_Einnahme"
+                            nue_key  = f"{row['id']}_Nuechtern"
+                            morg_key = f"{row['id']}_Morgens"
+                            mitt_key = f"{row['id']}_Mittags"
+                            abend_key= f"{row['id']}_Abends"
+                            nacht_key= f"{row['id']}_Nachts"
+                            com_key  = f"{row['id']}_comment"
 
-                    _seen_stripped = set()
-                    for row in supplement_rows:
-                        supplement_name = row["name"]
-                        _stripped = strip_dosage(supplement_name)
-                        if _stripped in _seen_stripped:
-                            continue
-                        _seen_stripped.add(_stripped)
-                        cols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
-                        cols[0].markdown(_stripped)
+                            loaded_prescription = None
+                            for p in (st.session_state.nem_prescriptions or []):
+                                if p.get("name") == supplement_name:
+                                    loaded_prescription = p
+                                    break
 
-                        gd_key   = f"{row['id']}_gesamt_dosierung"
-                        form_key = f"{row['id']}_darreichungsform"
-                        pe_key   = f"{row['id']}_pro_Einnahme"
-                        nue_key  = f"{row['id']}_Nuechtern"
-                        morg_key = f"{row['id']}_Morgens"
-                        mitt_key = f"{row['id']}_Mittags"
-                        abend_key= f"{row['id']}_Abends"
-                        nacht_key= f"{row['id']}_Nachts"
-                        com_key  = f"{row['id']}_comment"
+                            if gd_key not in st.session_state and loaded_prescription:
+                                st.session_state[gd_key]   = loaded_prescription.get("Gesamt-dosierung","")
+                                st.session_state[form_key] = loaded_prescription.get("Darreichungsform", DEFAULT_FORMS.get(supplement_name,"Kapseln"))
+                                st.session_state[pe_key]   = loaded_prescription.get("Pro Einnahme","")
+                                st.session_state[nue_key]  = loaded_prescription.get("Nüchtern","")
+                                st.session_state[morg_key] = loaded_prescription.get("Morgens","")
+                                st.session_state[mitt_key] = loaded_prescription.get("Mittags","")
+                                st.session_state[abend_key]= loaded_prescription.get("Abends","")
+                                st.session_state[nacht_key]= loaded_prescription.get("Nachts","")
+                                st.session_state[com_key]  = loaded_prescription.get("Kommentar","")
 
-                        loaded_prescription = None
-                        for p in (st.session_state.nem_prescriptions or []):
-                            if p.get("name") == supplement_name:
-                                loaded_prescription = p
-                                break
+                            i_gd    = st.session_state.get(gd_key,    "")
+                            i_form  = st.session_state.get(form_key,  DEFAULT_FORMS.get(supplement_name,"Kapseln"))
+                            i_pe    = st.session_state.get(pe_key,    "")
+                            i_nue   = st.session_state.get(nue_key,   "")
+                            i_morg  = st.session_state.get(morg_key,  "")
+                            i_mitt  = st.session_state.get(mitt_key,  "")
+                            i_abend = st.session_state.get(abend_key, "")
+                            i_nacht = st.session_state.get(nacht_key, "")
+                            i_com   = st.session_state.get(com_key,   "")
 
-                        if gd_key not in st.session_state and loaded_prescription:
-                            st.session_state[gd_key]   = loaded_prescription.get("Gesamt-dosierung","")
-                            st.session_state[form_key] = loaded_prescription.get("Darreichungsform", DEFAULT_FORMS.get(supplement_name,"Kapseln"))
-                            st.session_state[pe_key]   = loaded_prescription.get("Pro Einnahme","")
-                            st.session_state[nue_key]  = loaded_prescription.get("Nüchtern","")
-                            st.session_state[morg_key] = loaded_prescription.get("Morgens","")
-                            st.session_state[mitt_key] = loaded_prescription.get("Mittags","")
-                            st.session_state[abend_key]= loaded_prescription.get("Abends","")
-                            st.session_state[nacht_key]= loaded_prescription.get("Nachts","")
-                            st.session_state[com_key]  = loaded_prescription.get("Kommentar","")
+                            gd_val = i_gd  # kept in DB; not shown in UI
 
-                        i_gd    = st.session_state.get(gd_key,    "")
-                        i_form  = st.session_state.get(form_key,  DEFAULT_FORMS.get(supplement_name,"Kapseln"))
-                        i_pe    = st.session_state.get(pe_key,    "")
-                        i_nue   = st.session_state.get(nue_key,   "")
-                        i_morg  = st.session_state.get(morg_key,  "")
-                        i_mitt  = st.session_state.get(mitt_key,  "")
-                        i_abend = st.session_state.get(abend_key, "")
-                        i_nacht = st.session_state.get(nacht_key, "")
-                        i_com   = st.session_state.get(com_key,   "")
+                            dosage_presets = ["Kapseln","Lösung","Tabletten","Pulver","Tropfen","Sachet","Öl","Spray","Creme","Gel","Flüssig","Tee","Pflaster"]
+                            sel_form = cols[1].selectbox("", dosage_presets,
+                                index=dosage_presets.index(i_form) if i_form in dosage_presets else 0,
+                                key=form_key, label_visibility="collapsed", accept_new_options=True)
 
-                        gd_val = i_gd  # kept in DB; not shown in UI
+                            pe_val = i_pe  # kept in DB; not shown in UI
 
-                        dosage_presets = ["Kapseln","Lösung","Tabletten","Pulver","Tropfen","Sachet","Öl","Spray","Creme","Gel","Flüssig","Tee","Pflaster"]
-                        sel_form = cols[1].selectbox("", dosage_presets,
-                            index=dosage_presets.index(i_form) if i_form in dosage_presets else 0,
-                            key=form_key, label_visibility="collapsed", accept_new_options=True)
+                            dose_options = ["","1","2","3","4","5"]
+                            nue_val  = cols[2].selectbox("", dose_options, index=dose_options.index(i_nue)   if i_nue   in dose_options else 0, key=nue_key,  label_visibility="collapsed")
+                            morg_val = cols[3].selectbox("", dose_options, index=dose_options.index(i_morg)  if i_morg  in dose_options else 0, key=morg_key, label_visibility="collapsed")
+                            mitt_val = cols[4].selectbox("", dose_options, index=dose_options.index(i_mitt)  if i_mitt  in dose_options else 0, key=mitt_key, label_visibility="collapsed")
+                            abend_val= cols[5].selectbox("", dose_options, index=dose_options.index(i_abend) if i_abend in dose_options else 0, key=abend_key,label_visibility="collapsed")
+                            nacht_val= cols[6].selectbox("", dose_options, index=dose_options.index(i_nacht) if i_nacht in dose_options else 0, key=nacht_key,label_visibility="collapsed")
+                            comment  = cols[7].text_input("", key=com_key, placeholder="Kommentar", value=i_com or "", label_visibility="collapsed")
 
-                        pe_val = i_pe  # kept in DB; not shown in UI
+                            all_supplements_data.append({
+                                "name": supplement_name, "Gesamt-dosierung": gd_val,
+                                "Darreichungsform": sel_form, "Pro Einnahme": pe_val,
+                                "Nüchtern": nue_val, "Morgens": morg_val, "Mittags": mitt_val,
+                                "Abends": abend_val, "Nachts": nacht_val, "Kommentar": comment
+                            })
 
-                        dose_options = ["","1","2","3","4","5"]
-                        nue_val  = cols[2].selectbox("", dose_options, index=dose_options.index(i_nue)   if i_nue   in dose_options else 0, key=nue_key,  label_visibility="collapsed")
-                        morg_val = cols[3].selectbox("", dose_options, index=dose_options.index(i_morg)  if i_morg  in dose_options else 0, key=morg_key, label_visibility="collapsed")
-                        mitt_val = cols[4].selectbox("", dose_options, index=dose_options.index(i_mitt)  if i_mitt  in dose_options else 0, key=mitt_key, label_visibility="collapsed")
-                        abend_val= cols[5].selectbox("", dose_options, index=dose_options.index(i_abend) if i_abend in dose_options else 0, key=abend_key,label_visibility="collapsed")
-                        nacht_val= cols[6].selectbox("", dose_options, index=dose_options.index(i_nacht) if i_nacht in dose_options else 0, key=nacht_key,label_visibility="collapsed")
-                        comment  = cols[7].text_input("", key=com_key, placeholder="Kommentar", value=i_com or "", label_visibility="collapsed")
-
-                        all_supplements_data.append({
-                            "name": supplement_name, "Gesamt-dosierung": gd_val,
-                            "Darreichungsform": sel_form, "Pro Einnahme": pe_val,
-                            "Nüchtern": nue_val, "Morgens": morg_val, "Mittags": mitt_val,
-                            "Abends": abend_val, "Nachts": nacht_val, "Kommentar": comment
-                        })
-
-                    # ── 3 per-category extra rows ───────────────────────
-                    def _edi_cx(v, _d=_extra_dose_opts): return _d.index(v) if v in _d else 0
-                    for _xi in range(1, 4):
-                        _epfx = f"nem_cx_{_cat_slug}_{_xi}"
-                        _ecols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
-                        _ecols[0].text_input("", key=f"{_epfx}_name", placeholder="Supplement...", label_visibility="collapsed")
-                        _ef_cx = st.session_state.get(f"{_epfx}_form", "Kapseln")
-                        _ecols[1].selectbox("", _extra_form_opts,
-                            index=_extra_form_opts.index(_ef_cx) if _ef_cx in _extra_form_opts else 0,
-                            key=f"{_epfx}_form", label_visibility="collapsed")
-                        _ecols[2].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nue","")),   key=f"{_epfx}_nue",   label_visibility="collapsed")
-                        _ecols[3].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_morg","")),  key=f"{_epfx}_morg",  label_visibility="collapsed")
-                        _ecols[4].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_mitt","")),  key=f"{_epfx}_mitt",  label_visibility="collapsed")
-                        _ecols[5].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_abend","")), key=f"{_epfx}_abend", label_visibility="collapsed")
-                        _ecols[6].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nacht","")), key=f"{_epfx}_nacht", label_visibility="collapsed")
-                        _ecols[7].text_input("", key=f"{_epfx}_kom", placeholder="Kommentar", label_visibility="collapsed")
+                        # ── 3 per-category extra rows ───────────────────────
+                        def _edi_cx(v, _d=_extra_dose_opts): return _d.index(v) if v in _d else 0
+                        for _xi in range(1, 4):
+                            _epfx = f"nem_cx_{_cat_slug}_{_xi}"
+                            _ecols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
+                            _ecols[0].text_input("", key=f"{_epfx}_name", placeholder="Supplement...", label_visibility="collapsed")
+                            _ef_cx = st.session_state.get(f"{_epfx}_form", "Kapseln")
+                            _ecols[1].selectbox("", _extra_form_opts,
+                                index=_extra_form_opts.index(_ef_cx) if _ef_cx in _extra_form_opts else 0,
+                                key=f"{_epfx}_form", label_visibility="collapsed")
+                            _ecols[2].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nue","")),   key=f"{_epfx}_nue",   label_visibility="collapsed")
+                            _ecols[3].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_morg","")),  key=f"{_epfx}_morg",  label_visibility="collapsed")
+                            _ecols[4].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_mitt","")),  key=f"{_epfx}_mitt",  label_visibility="collapsed")
+                            _ecols[5].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_abend","")), key=f"{_epfx}_abend", label_visibility="collapsed")
+                            _ecols[6].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nacht","")), key=f"{_epfx}_nacht", label_visibility="collapsed")
+                            _ecols[7].text_input("", key=f"{_epfx}_kom", placeholder="Kommentar", label_visibility="collapsed")
 
             if st.button("NEM PDF generieren", key="nem_pdf_button"):
                 # Build PDF data from session state keys so closed categories are included
@@ -2527,61 +2607,61 @@ def main():
             _inf_sched_header()
             revita_immune      = _inf_row("RevitaImmune",
                 "revita_immune",
-                "Preis: 160 EUR\n1x Vitamin C\n2x Elektrolyte\n2x ATP-Konzentrat\n250 ml 0,9% NaCl")
+                "1x Vitamin C\n2x Elektrolyte\n2x ATP-Konzentrat\n250 ml 0,9% NaCl")
             revita_immune_plus = _inf_row("RevitaImmunePlus",
                 "revita_immune_plus",
-                "Preis: 220 EUR\n1x Selen (100ml NaCl)\n1x Zink (100ml NaCl)\n2x Vit.C | 2x Elektrolyte\n2x ATP Konzentrat | 1x Lysin\n1x Methionin | 1x Glutamin\n2x Lymphdiaral\n500 ml + 100 ml NaCl")
+                "1x Selen (100ml NaCl)\n1x Zink (100ml NaCl)\n2x Vit.C | 2x Elektrolyte\n2x ATP Konzentrat | 1x Lysin\n1x Methionin | 1x Glutamin\n2x Lymphdiaral\n500 ml + 100 ml NaCl")
             revita_heal        = _inf_row("Revita Heal (2x)",
                 "revita_heal",
-                "Preis: 450 EUR (Paket)\nPRAEOP: 1x Zink (100ml) | 3x Lysin/Prolin\n1x Mg 400 | 1x Procain | 2x ATP\n1x Aminovital | 1x Cholincitrat\n3x Methionin | 2x Glutamin\n1x Lymphdiaral | 2x Traumeel | 500ml NaCl\nPOSTOP: 1x Selen (100ml) | 1x B12\n1x Folsaeure | 2x ATP | 3x Lysin-Prolin\n3x Methionin | 1x Elektrolyte\n1x Procain | 2x Vit.C 7,5g | 250ml NaCl")
+                "PRAEOP: 1x Zink (100ml) | 3x Lysin/Prolin\n1x Mg 400 | 1x Procain | 2x ATP\n1x Aminovital | 1x Cholincitrat\n3x Methionin | 2x Glutamin\n1x Lymphdiaral | 2x Traumeel | 500ml NaCl\nPOSTOP: 1x Selen (100ml) | 1x B12\n1x Folsaeure | 2x ATP | 3x Lysin-Prolin\n3x Methionin | 1x Elektrolyte\n1x Procain | 2x Vit.C 7,5g | 250ml NaCl")
             revita_bludder     = _inf_row("RevitaInfection (vorher Blaseninfusion)",
                 "revita_bludder",
-                "Preis: 280 EUR\n1x Aminovital | 1x Cholincitrat\n2x Glutamin | 4x Methionin\n2x Prolin/Lysin | 1x Mg 400\n1x Procain | 3x Traumeel\n1x Vit.C 25g\n500 ml NaCl")
+                "1x Aminovital | 1x Cholincitrat\n2x Glutamin | 4x Methionin\n2x Prolin/Lysin | 1x Mg 400\n1x Procain | 3x Traumeel\n1x Vit.C 25g\n500 ml NaCl")
             revita_ferro       = _inf_row("RevitaFerro",
                 "revita_ferro",
-                "Preis: auf Anfrage\n1x Ferinject (100ml NaCl)\n1x Vit.C (+B12) (100ml NaCl)")
+                "1x Ferinject (100ml NaCl)\n1x Vit.C (+B12) (100ml NaCl)")
             revita_energy      = _inf_row("RevitaEnergyBoost",
                 "revita_energy",
-                "Preis: 170 EUR\n2x Elektrolyte | 3x Lymphdiaral\n2x ATP-Konzentrat | 2x Tyrosin\n250 ml NaCl")
+                "2x Elektrolyte | 3x Lymphdiaral\n2x ATP-Konzentrat | 2x Tyrosin\n250 ml NaCl")
             revita_focus       = _inf_row("RevitaFocus",
                 "revita_focus",
-                "Preis: 265 EUR\n1x Alpha Liponsaeure (100ml NaCl)\n1x Zink (100ml NaCl)\n1x AminoVital | 2x ATP-Konzentrat\n1x Mg 200 | 1x Taurin | 3x Tyrosin\n1x Carnitin | 1x Vit.C 7,5 | 1x TAD\n250 ml NaCl")
+                "1x Alpha Liponsaeure (100ml NaCl)\n1x Zink (100ml NaCl)\n1x AminoVital | 2x ATP-Konzentrat\n1x Mg 200 | 1x Taurin | 3x Tyrosin\n1x Carnitin | 1x Vit.C 7,5 | 1x TAD\n250 ml NaCl")
             revita_nad         = _inf_row("RevitaNAD+",
                 "revita_nad",
-                "Preis: 500mg = 290 EUR | 125mg = 240 EUR\n1x NAD+ 500mg ODER 1x NAD+ 125mg\nVictoria: 500ml NaCl 0,9%\nBurk: 500ml Ringer Loesung\nGeringste Infusionsgeschwindigkeit!")
+                "1x NAD+ 500mg ODER 1x NAD+ 125mg\nVictoria: 500ml NaCl 0,9%\nBurk: 500ml Ringer Loesung\nGeringste Infusionsgeschwindigkeit!")
             revita_relax       = _inf_row("RevitaRelax",
                 "revita_relax",
-                "Preis: 185 EUR\n1x Procain Baseninfusion (100ml NaCl)\n  (NaBiC 8,4% | Mg 400 | Procain 2%)\ndanach:\n1x Cholincitrat | 1x Aminovital\n1x Tryptophan | 1x Phenylalanin\n1x Tyrosin\n250 ml NaCl")
+                "1x Procain Baseninfusion (100ml NaCl)\n  (NaBiC 8,4% | Mg 400 | Procain 2%)\ndanach:\n1x Cholincitrat | 1x Aminovital\n1x Tryptophan | 1x Phenylalanin\n1x Tyrosin\n250 ml NaCl")
             revita_fit         = _inf_row("RevitaFit",
                 "revita_fit",
-                "Preis: 260 EUR\n1x Alpha Liponsaeure (100ml NaCl)\n2x ATP Konzentrat | 1x Mg 200\n1x Carnitin | 1x Carnosin\n1x Protect Drip (Vit.C 7,5g, Lysin 2g,\n  AOCT, Methionin 750mg, Carnosin 200mg, Carnitin 1g)\n1x Glutamin | 1x Taurin | 1x TAD\n500 ml NaCl")
+                "1x Alpha Liponsaeure (100ml NaCl)\n2x ATP Konzentrat | 1x Mg 200\n1x Carnitin | 1x Carnosin\n1x Protect Drip (Vit.C 7,5g, Lysin 2g,\n  AOCT, Methionin 750mg, Carnosin 200mg, Carnitin 1g)\n1x Glutamin | 1x Taurin | 1x TAD\n500 ml NaCl")
             revita_hangover    = _inf_row("RevitaHangover",
                 "revita_hangover",
-                "Preis: 225 EUR\n1x Zink (100ml NaCl)\n2x ATP Konzentrat | 2x TAD\n1x Vit.C 10g | 2x Elektrolyte\n1x Mg 200 | 2x Tyrosin\n2x Tryptophan | 1x Phenylalanin\n500 ml NaCl")
+                "1x Zink (100ml NaCl)\n2x ATP Konzentrat | 2x TAD\n1x Vit.C 10g | 2x Elektrolyte\n1x Mg 200 | 2x Tyrosin\n2x Tryptophan | 1x Phenylalanin\n500 ml NaCl")
             revita_beauty      = _inf_row("RevitaBeauty",
                 "revita_beauty",
-                "Preis: 170 EUR\n1x Beauty Drip (Arginin 2g, Methionin 750mg,\n  Taurin 1g, Prolin 3g, Lysin 3g,\n  Biotin 5mg, Elektrolyte)\n1x Vit.C 7,5g | 1x TAD 600mg\n250 ml NaCl")
+                "1x Beauty Drip (Arginin 2g, Methionin 750mg,\n  Taurin 1g, Prolin 3g, Lysin 3g,\n  Biotin 5mg, Elektrolyte)\n1x Vit.C 7,5g | 1x TAD 600mg\n250 ml NaCl")
             revita_antiaging   = _inf_row("RevitaAnti-Aging",
                 "revita_antiaging",
-                "Preis: 290 EUR\n2x TAD | 2x Carnosin | 2x Prolin/Lysin\n4x Biotin | 1x Vit.C 7,5\n1x Methionin | 1x Taurin | 1x Lysin\n1x Mg 200 | 1x Aminovital\n2x ATP Konzentrat\n500 ml NaCl")
+                "2x TAD | 2x Carnosin | 2x Prolin/Lysin\n4x Biotin | 1x Vit.C 7,5\n1x Methionin | 1x Taurin | 1x Lysin\n1x Mg 200 | 1x Aminovital\n2x ATP Konzentrat\n500 ml NaCl")
             revita_detox       = _inf_row("RevitaDetox",
                 "revita_detox",
-                "Preis: 160 EUR\n1x DetoxDrip (Elektrolyte, AOCT, Lysin,\n  Methionin, Glutamin, Carnitin)\n1x TAD\n250 ml NaCl")
+                "1x DetoxDrip (Elektrolyte, AOCT, Lysin,\n  Methionin, Glutamin, Carnitin)\n1x TAD\n250 ml NaCl")
             revita_chelate     = _inf_row("RevitaChelate",
                 "revita_chelate",
-                "CHELATE I (180 EUR):\n1x NaBic | 1x DMSA | 1x Alpha-Liponsaeure\n  (je 100ml NaCl)\n1x TAD (spritzen) | 1x Ca-EDTA (250ml NaCl)\n\nCHELATE II (200 EUR):\n1x NaBic | 1x DMPS | 1x Alpha-Liponsaeure\n  (je 100ml NaCl)\n1x TAD (spritzen) | 1x Ca-EDTA (250ml NaCl)")
+                "CHELATE I:\n1x NaBic | 1x DMSA | 1x Alpha-Liponsaeure\n  (je 100ml NaCl)\n1x TAD (spritzen) | 1x Ca-EDTA (250ml NaCl)\n\nCHELATE II:\n1x NaBic | 1x DMPS | 1x Alpha-Liponsaeure\n  (je 100ml NaCl)\n1x TAD (spritzen) | 1x Ca-EDTA (250ml NaCl)")
             revita_liver       = _inf_row("RevitaLiver",
                 "revita_liver",
-                "Preis: 230 EUR\n1x Alpha Liponsaeure (100ml NaCl)\n2x TAD | 2x Elektrolyte\n3x Hepar Comp Heal | 1x AOCT\n1x Cholincitrat | 1x Methionin\n1x Aminovital | 1x B-Komplex | 1x B6\n250 ml NaCl")
+                "1x Alpha Liponsaeure (100ml NaCl)\n2x TAD | 2x Elektrolyte\n3x Hepar Comp Heal | 1x AOCT\n1x Cholincitrat | 1x Methionin\n1x Aminovital | 1x B-Komplex | 1x B6\n250 ml NaCl")
             revita_leakygut    = _inf_row("RevitaLeaky-gut",
                 "revita_leakygut",
-                "Preis: 195 EUR\n1x Leaky Gut Amino Drip\n  (B12, Cholincitrat, Elektrolyte,\n  Glutamin, Lysin, Taurin)\n1x Glutamin | 1x Vit.C 7,5\n250 ml NaCl")
+                "1x Leaky Gut Amino Drip\n  (B12, Cholincitrat, Elektrolyte,\n  Glutamin, Lysin, Taurin)\n1x Glutamin | 1x Vit.C 7,5\n250 ml NaCl")
             revita_infection   = _inf_row("RevitaNerve (vorher Polyneuropathie)",
                 "revita_infection",
-                "Preis: 240 EUR\n1x Alpha Liponsaeure (100ml NaCl)\n1x AOCT | 2x ATP Konzentrat\n2x Elektrolyte | 1x Folsaeure\n1x Mg 200 | 1x Vit.B6 | 1x B12\n1x B-Komplex | 2x Vit.C 7,5g\n250 ml NaCl")
+                "1x Alpha Liponsaeure (100ml NaCl)\n1x AOCT | 2x ATP Konzentrat\n2x Elektrolyte | 1x Folsaeure\n1x Mg 200 | 1x Vit.B6 | 1x B12\n1x B-Komplex | 2x Vit.C 7,5g\n250 ml NaCl")
             revita_joint       = _inf_row("RevitaJoint",
                 "revita_joint",
-                "Preis: 210 EUR\n1x Prolin/Lysin | 1x Lysin\n1x ATP | 1x AOCT | 1x Vit.C 7,5\n2x Elektrolyte | 1x Glutamin | 1x TAD\n250 ml NaCl")
+                "1x Prolin/Lysin | 1x Lysin\n1x ATP | 1x AOCT | 1x Vit.C 7,5\n2x Elektrolyte | 1x Glutamin | 1x TAD\n250 ml NaCl")
 
         with st.expander("Sonstiges", expanded=inf.get("_sec_sonstiges_open", False)):
             _inf_sched_header()
@@ -2623,18 +2703,50 @@ def main():
             perioperative        = _inf_row("Perioperative Infusion (3 Infusionen)",         "std_perioperative",   "Perioperative Infusion (3 Infusionen)",show_icon=False)
             nerven_aufbau        = _inf_row("Nerven Aufbau Infusion",                        "std_nerven_aufbau",   "Nerven Aufbau Infusion",             show_icon=False)
             anti_oxidantien      = _inf_row("Anti-Oxidantien Infusion",                      "std_anti_oxidantien", "Anti-Oxidantien Infusion",           show_icon=False)
-            aminoinfusion        = _inf_row("Aminoinfusion leaky gut (5-10)",                "std_aminoinfusion",   "Aminoinfusion leaky gut (5-10)",     show_icon=False)
             infektions_infusion  = _inf_row("Infektions-Infusion / H2O2",                   "infektions_infusion", "Infektions-Infusion / H2O2",         show_icon=False)
 
         with st.expander("Extras", expanded=inf.get("_sec_zusaetze_open", False)):
             _inf_sched_header()
             _extra_rows("inf", "inf", inf, patient["therapiebeginn"], patient["dauer"],
                         infusion_schedule_data, row_cols=INF_ROW_COLS)
-            zusaetze = st.multiselect("Zusätze auswählen",
-                ["Vit.B Komplex","Vit.B6/B12/Folsäure","Vit.D 300 kIE","Vit.B3","Biotin","Glycin",
-                 "Cholincitrat","Zink inject","Magnesium 400mg","TAD (red.Glut.)","Arginin","Glutamin",
-                 "Taurin","Ornithin","Prolin/Lysin","Lysin","PC 1000mg","Oxyvenierung","Mito-Energy"],
-                default=inf.get("zusaetze",[]), key="zusaetze_select")
+
+            import re as _re_inf
+            st.markdown("**Zusätze auswählen:**")
+            _ZUSATZ_ITEMS = [
+                "Vit.B Komplex", "Vit.B6/B12/Folsäure", "Vit.D 300 kIE", "Vit.B3", "Biotin",
+                "Glycin", "Cholincitrat", "Zink inject", "Magnesium 400mg", "TAD (red.Glut.)",
+                "Arginin", "Glutamin", "Taurin", "Ornithin", "Prolin/Lysin", "Lysin",
+                "PC 1000mg", "Oxyvenierung", "Mito-Energy",
+            ]
+            _QTY_OPTS = ["1x", "2x", "3x", "4x", "5x"]
+            zusatz_items_data = {}
+            for _zit in _ZUSATZ_ITEMS:
+                _zslug = _re_inf.sub(r'[^a-z0-9]+', '_', _zit.lower()).strip('_')
+                _zcb_key = f"zusatz_{_zslug}_cb"
+                _zqt_key = f"zusatz_{_zslug}_qty"
+                _zc1, _zc2 = st.columns([3, 1])
+                with _zc1:
+                    _zchecked = st.checkbox(_zit, value=inf.get(_zcb_key, False), key=_zcb_key)
+                with _zc2:
+                    _saved_qty = inf.get(_zqt_key, "1x")
+                    _zqty = st.selectbox("", _QTY_OPTS,
+                        index=_QTY_OPTS.index(_saved_qty) if _saved_qty in _QTY_OPTS else 0,
+                        key=_zqt_key, label_visibility="collapsed", disabled=not _zchecked)
+                zusatz_items_data[_zit] = (_zchecked, _zqty if _zchecked else "")
+
+            st.markdown("**Auf NaCl:**")
+            _NACL_OPTS = ["Auf NaCl 50 ml", "Auf NaCl 100 ml", "Auf NaCl 250 ml", "Auf NaCl 500ml", "Auf 1000ml"]
+            nacl_data = {}
+            _nacl_cols = st.columns(len(_NACL_OPTS))
+            for _ni, _nopt in enumerate(_NACL_OPTS):
+                _nslug = _re_inf.sub(r'[^a-z0-9]+', '_', _nopt.lower()).strip('_')
+                _nkey = f"nacl_{_nslug}_cb"
+                with _nacl_cols[_ni]:
+                    nacl_data[_nopt] = st.checkbox(_nopt, value=inf.get(_nkey, False), key=_nkey)
+
+            # Build legacy zusaetze list for backward compat + PDF comment
+            zusaetze = [f"{n} ({q})" for n, (c, q) in zusatz_items_data.items() if c]
+            zusaetze += [n for n, c in nacl_data.items() if c]
 
         new_inf = {
             "inf_custom1_cb": inf_custom1_cb, "inf_custom1_text": inf_custom1_text,
@@ -2654,16 +2766,27 @@ def main():
             "std_procain_basen": procain_basen, "std_procain_basen_ml": procain_2percent,
             "std_artemisinin": artemisinin, "std_perioperative": perioperative,
             "std_oxyvenierung": oxyvenierung, "std_nerven_aufbau": nerven_aufbau,
-            "std_anti_oxidantien": anti_oxidantien, "std_aminoinfusion": aminoinfusion,
+            "std_anti_oxidantien": anti_oxidantien,
             # alias without std_ prefix for PDF lookup
             "mito_energy": mito_energy, "schwermetalltest": schwermetalltest,
             "procain_basen": procain_basen, "artemisinin": artemisinin,
             "perioperative": perioperative, "oxyvenierung": oxyvenierung,
             "nerven_aufbau": nerven_aufbau, "anti_oxidantien": anti_oxidantien,
-            "aminoinfusion": aminoinfusion,
             "infektions_infusion": infektions_infusion,
             "zusaetze": zusaetze,
         }
+        # Save individual zusatz checkbox + qty + nacl checkbox fields from current widget state
+        import re as _re_inf2
+        for _zit in ["Vit.B Komplex","Vit.B6/B12/Folsäure","Vit.D 300 kIE","Vit.B3","Biotin",
+                     "Glycin","Cholincitrat","Zink inject","Magnesium 400mg","TAD (red.Glut.)",
+                     "Arginin","Glutamin","Taurin","Ornithin","Prolin/Lysin","Lysin",
+                     "PC 1000mg","Oxyvenierung","Mito-Energy"]:
+            _zs = _re_inf2.sub(r'[^a-z0-9]+', '_', _zit.lower()).strip('_')
+            new_inf[f"zusatz_{_zs}_cb"]  = bool(st.session_state.get(f"zusatz_{_zs}_cb", False))
+            new_inf[f"zusatz_{_zs}_qty"] = str(st.session_state.get(f"zusatz_{_zs}_qty", "1x"))
+        for _nopt in ["Auf NaCl 50 ml","Auf NaCl 100 ml","Auf NaCl 250 ml","Auf NaCl 500ml","Auf 1000ml"]:
+            _ns = _re_inf2.sub(r'[^a-z0-9]+', '_', _nopt.lower()).strip('_')
+            new_inf[f"nacl_{_ns}_cb"] = bool(st.session_state.get(f"nacl_{_ns}_cb", False))
         new_inf.update(infusion_schedule_data)
         st.session_state.infusion_data = new_inf
 
@@ -2678,6 +2801,30 @@ def main():
 
     with tabs[2]:
         _infusion_tab()
+
+    # =========================================================
+    # TAB 3: NOTIZEN
+    # =========================================================
+    @st.fragment
+    def _notizen_tab():
+        _tp_notizen = st.session_state.therapieplan_data
+        st.markdown('<div class="green-section-header">Notizen & Bemerkungen</div>', unsafe_allow_html=True)
+        _notes_val = _tp_notizen.get("notizen", "")
+        notes = st.text_area("", value=_notes_val, height=500,
+            placeholder="Notizen und Bemerkungen...",
+            key="notizen_text_input", label_visibility="collapsed")
+        st.session_state.therapieplan_data["notizen"] = notes
+        if st.button("Notizen PDF generieren", key="notizen_pdf_button"):
+            _pdf_bytes = generate_notes_pdf(patient, notes)
+            st.session_state.auto_download_pdf = {
+                "data": _pdf_bytes,
+                "filename": f"RevitaClinic_Notizen_{patient.get('patient','')}.pdf",
+                "mime": "application/pdf"
+            }
+            st.rerun(scope="app")
+
+    with tabs[3]:
+        _notizen_tab()
 
     # =========================================================
     # SAVE HANDLER
@@ -2718,6 +2865,9 @@ def main():
                 "kt4_date":                 _d(patient.get("kt4_date")),
                 "kt12_date":                _d(patient.get("kt12_date")),
                 "kt24_date":                _d(patient.get("kt24_date")),
+                "kt4_zielparameter":        patient.get("kt4_zielparameter", ""),
+                "kt12_zielparameter":       patient.get("kt12_zielparameter", ""),
+                "kt24_zielparameter":       patient.get("kt24_zielparameter", ""),
             }
 
             # ── 2. NEM: collect from session state nem_prescriptions ──
@@ -2800,7 +2950,7 @@ def main():
                 st.error("❌ Fehler beim Speichern! Konsole prüfen.")
 
     if _is_admin:
-        with tabs[3]:
+        with tabs[4]:
             admin_panel(db)
 
     # ── Autosave (every 120s if data changed and patient already exists in DB) ──
