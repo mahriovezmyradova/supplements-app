@@ -232,6 +232,11 @@ div[data-testid="stHorizontalBlock"] button { margin: 3px !important; padding: 7
 """, unsafe_allow_html=True)
 
 
+# Pre-warm DB caches while the login page is displayed so the first render
+# after successful login uses cached data and doesn't stall for 30+ seconds.
+fetch_supplements()
+fetch_patient_names()
+
 # ── Authentication wall ────────────────────────────────────────────────────
 _current_user = login_page(db)
 
@@ -1521,9 +1526,9 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         st.session_state[f"inf_custom{j}_text"]  = _inf_data.get(f"inf_custom{j}_text", "")
 
     # ── Per-category NEM extra rows: seed happens inside NEM tab on next render ──
-    # Clear any stale nem_cx_* keys from previous patient so widgets reset cleanly.
+    # Clear stale nem_cx_*, _nem_cat_names, and category open-state keys.
     for _k in list(st.session_state.keys()):
-        if _k.startswith("nem_cx_") or _k == "_nem_cat_names":
+        if _k.startswith("nem_cx_") or _k.startswith("_cat_ex_") or _k.startswith("_cat_btn_") or _k == "_nem_cat_names":
             del st.session_state[_k]
     st.session_state["_pending_nem_cat_seed"] = True
 
@@ -1743,10 +1748,24 @@ def main():
     # This is safe here because we are BEFORE patient_inputs() renders,
     # so no widgets have been instantiated in this run yet.
     if st.session_state.get("_do_full_wipe"):
-        _saved_auth = st.session_state.get("_auth_user")  # preserve login across wipe
+        _saved_auth = st.session_state.get("_auth_user")
         st.session_state.clear()
         if _saved_auth:
             st.session_state["_auth_user"] = _saved_auth
+        # Belt-and-suspenders: explicitly zero every supplement widget key so no
+        # stale values survive even if a fragment cached its widget state.
+        for _, _wr in df.iterrows():
+            if not str(_wr["id"]).startswith("CAT"):
+                _wid, _wsn = _wr["id"], _wr["name"]
+                st.session_state[f"{_wid}_gesamt_dosierung"] = ""
+                st.session_state[f"{_wid}_darreichungsform"] = DEFAULT_FORMS.get(_wsn, "Kapseln")
+                st.session_state[f"{_wid}_pro_Einnahme"]     = ""
+                st.session_state[f"{_wid}_Nuechtern"]        = ""
+                st.session_state[f"{_wid}_Morgens"]          = ""
+                st.session_state[f"{_wid}_Mittags"]          = ""
+                st.session_state[f"{_wid}_Abends"]           = ""
+                st.session_state[f"{_wid}_Nachts"]           = ""
+                st.session_state[f"{_wid}_comment"]          = ""
         st.session_state["patient_data"]      = {}
         st.session_state["nem_prescriptions"] = []
         st.session_state["therapieplan_data"] = {}
@@ -2235,121 +2254,120 @@ def main():
                     _cat_slug = _re.sub(r'[^a-z0-9]+', '_', category_name.lower()).strip('_')
                     st.session_state["_nem_cat_names"][_cat_slug] = category_name
 
-                    with st.expander(category_name, expanded=False):
-                        _seen_stripped = set()
-                        for row in supplement_rows:
-                            supplement_name = row["name"]
-                            _stripped = strip_dosage(supplement_name)
-                            if _stripped in _seen_stripped:
-                                continue
-                            _seen_stripped.add(_stripped)
-                            cols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
-                            cols[0].markdown(_stripped)
-
-                            # Resolve initial values: prefer widget session state (already set),
-                            # then loaded prescription, then defaults.
-                            # This is the correct priority for both fresh and loaded states.
-                            gd_key   = f"{row['id']}_gesamt_dosierung"
-                            form_key = f"{row['id']}_darreichungsform"
-                            pe_key   = f"{row['id']}_pro_Einnahme"
-                            nue_key  = f"{row['id']}_Nuechtern"
-                            morg_key = f"{row['id']}_Morgens"
-                            mitt_key = f"{row['id']}_Mittags"
-                            abend_key= f"{row['id']}_Abends"
-                            nacht_key= f"{row['id']}_Nachts"
-                            com_key  = f"{row['id']}_comment"
-
-                            loaded_prescription = None
-                            for p in (st.session_state.nem_prescriptions or []):
-                                if p.get("name") == supplement_name:
-                                    loaded_prescription = p
-                                    break
-
-                            # If session state key doesn't exist yet, seed it from loaded data
-                            if gd_key not in st.session_state and loaded_prescription:
-                                st.session_state[gd_key]   = loaded_prescription.get("Gesamt-dosierung","")
-                                st.session_state[form_key] = loaded_prescription.get("Darreichungsform", DEFAULT_FORMS.get(supplement_name,"Kapseln"))
-                                st.session_state[pe_key]   = loaded_prescription.get("Pro Einnahme","")
-                                st.session_state[nue_key]  = loaded_prescription.get("Nüchtern","")
-                                st.session_state[morg_key] = loaded_prescription.get("Morgens","")
-                                st.session_state[mitt_key] = loaded_prescription.get("Mittags","")
-                                st.session_state[abend_key]= loaded_prescription.get("Abends","")
-                                st.session_state[nacht_key]= loaded_prescription.get("Nachts","")
-                                st.session_state[com_key]  = loaded_prescription.get("Kommentar","")
-
-                            i_gd    = st.session_state.get(gd_key,    "")
-                            i_form  = st.session_state.get(form_key,  DEFAULT_FORMS.get(supplement_name,"Kapseln"))
-                            i_pe    = st.session_state.get(pe_key,    "")
-                            i_nue   = st.session_state.get(nue_key,   "")
-                            i_morg  = st.session_state.get(morg_key,  "")
-                            i_mitt  = st.session_state.get(mitt_key,  "")
-                            i_abend = st.session_state.get(abend_key, "")
-                            i_nacht = st.session_state.get(nacht_key, "")
-                            i_com   = st.session_state.get(com_key,   "")
-
-                            # ── Gesamt-dosierung (hidden; re-enable by uncommenting cols[1] block) ──
-                            # gd_options = ["","1","2","3","4","5","6","7","8","9","10","12","14","16",
-                            #               "18","20","22","24","26","28","30","35","40","45","50","60",
-                            #               "70","80","90","100","120","150","180","200","250","300","400","500"]
-                            # gd_val = cols[1].selectbox("", gd_options,
-                            #     index=gd_options.index(i_gd) if i_gd in gd_options else 0,
-                            #     key=gd_key, label_visibility="collapsed", accept_new_options=True)
-                            gd_val = i_gd  # kept in DB; not shown in UI
-
-                            dosage_presets = ["Kapseln","Lösung","Tabletten","Pulver","Tropfen","Sachet","Öl","Spray","Creme","Gel","Flüssig","Tee","Pflaster"]
-                            sel_form = cols[1].selectbox("", dosage_presets,
-                                index=dosage_presets.index(i_form) if i_form in dosage_presets else 0,
-                                key=form_key, label_visibility="collapsed", accept_new_options=True)
-
-                            # ── Pro Einnahme (hidden; re-enable by uncommenting cols[3] block) ──
-                            # pe_options = get_pro_Einnahme_options(sel_form)
-                            # pe_val = cols[3].selectbox("", pe_options,
-                            #     index=pe_options.index(i_pe) if i_pe in pe_options else 0,
-                            #     key=pe_key, label_visibility="collapsed", accept_new_options=True)
-                            pe_val = i_pe  # kept in DB; not shown in UI
-
-                            dose_options = ["","1","2","3","4","5"]
-                            nue_val  = cols[2].selectbox("", dose_options, index=dose_options.index(i_nue)   if i_nue   in dose_options else 0, key=nue_key,  label_visibility="collapsed")
-                            morg_val = cols[3].selectbox("", dose_options, index=dose_options.index(i_morg)  if i_morg  in dose_options else 0, key=morg_key, label_visibility="collapsed")
-                            mitt_val = cols[4].selectbox("", dose_options, index=dose_options.index(i_mitt)  if i_mitt  in dose_options else 0, key=mitt_key, label_visibility="collapsed")
-                            abend_val= cols[5].selectbox("", dose_options, index=dose_options.index(i_abend) if i_abend in dose_options else 0, key=abend_key,label_visibility="collapsed")
-                            nacht_val= cols[6].selectbox("", dose_options, index=dose_options.index(i_nacht) if i_nacht in dose_options else 0, key=nacht_key,label_visibility="collapsed")
-                            comment  = cols[7].text_input("", key=com_key, placeholder="Kommentar", value=i_com or "", label_visibility="collapsed")
-
-                            all_supplements_data.append({
-                                "name": supplement_name, "Gesamt-dosierung": gd_val,
-                                "Darreichungsform": sel_form, "Pro Einnahme": pe_val,
-                                "Nüchtern": nue_val, "Morgens": morg_val, "Mittags": mitt_val,
-                                "Abends": abend_val, "Nachts": nacht_val, "Kommentar": comment
-                            })
-
-                        # ── 3 per-category extra rows ───────────────────────
-                        def _edi_cx(v, _d=_extra_dose_opts): return _d.index(v) if v in _d else 0
+                    # Seed extra rows outside the open-state check so they persist
+                    # even when the category is collapsed (save reads from session_state).
+                    if _do_nem_cat_seed:
                         for _xi in range(1, 4):
                             _epfx = f"nem_cx_{_cat_slug}_{_xi}"
-                            if _do_nem_cat_seed:
-                                _ce = next((e for e in _custom_nem_loaded
-                                            if e.get("_cat") == _cat_slug and e.get("_i") == _xi), None)
-                                st.session_state[f"{_epfx}_name"]  = _ce.get("name", "")                    if _ce else ""
-                                st.session_state[f"{_epfx}_form"]  = _ce.get("Darreichungsform", "Kapseln") if _ce else "Kapseln"
-                                st.session_state[f"{_epfx}_nue"]   = _ce.get("Nüchtern", "")               if _ce else ""
-                                st.session_state[f"{_epfx}_morg"]  = _ce.get("Morgens", "")                if _ce else ""
-                                st.session_state[f"{_epfx}_mitt"]  = _ce.get("Mittags", "")                if _ce else ""
-                                st.session_state[f"{_epfx}_abend"] = _ce.get("Abends", "")                 if _ce else ""
-                                st.session_state[f"{_epfx}_nacht"] = _ce.get("Nachts", "")                 if _ce else ""
-                                st.session_state[f"{_epfx}_kom"]   = _ce.get("Kommentar", "")              if _ce else ""
-                            _ecols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
-                            _ecols[0].text_input("", key=f"{_epfx}_name", placeholder="Supplement...", label_visibility="collapsed")
-                            _ef_cx = st.session_state.get(f"{_epfx}_form", "Kapseln")
-                            _ecols[1].selectbox("", _extra_form_opts,
-                                index=_extra_form_opts.index(_ef_cx) if _ef_cx in _extra_form_opts else 0,
-                                key=f"{_epfx}_form", label_visibility="collapsed")
-                            _ecols[2].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nue","")),   key=f"{_epfx}_nue",   label_visibility="collapsed")
-                            _ecols[3].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_morg","")),  key=f"{_epfx}_morg",  label_visibility="collapsed")
-                            _ecols[4].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_mitt","")),  key=f"{_epfx}_mitt",  label_visibility="collapsed")
-                            _ecols[5].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_abend","")), key=f"{_epfx}_abend", label_visibility="collapsed")
-                            _ecols[6].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nacht","")), key=f"{_epfx}_nacht", label_visibility="collapsed")
-                            _ecols[7].text_input("", key=f"{_epfx}_kom", placeholder="Kommentar", label_visibility="collapsed")
+                            _ce = next((e for e in _custom_nem_loaded
+                                        if e.get("_cat") == _cat_slug and e.get("_i") == _xi), None)
+                            st.session_state[f"{_epfx}_name"]  = _ce.get("name", "")                    if _ce else ""
+                            st.session_state[f"{_epfx}_form"]  = _ce.get("Darreichungsform", "Kapseln") if _ce else "Kapseln"
+                            st.session_state[f"{_epfx}_nue"]   = _ce.get("Nüchtern", "")               if _ce else ""
+                            st.session_state[f"{_epfx}_morg"]  = _ce.get("Morgens", "")                if _ce else ""
+                            st.session_state[f"{_epfx}_mitt"]  = _ce.get("Mittags", "")                if _ce else ""
+                            st.session_state[f"{_epfx}_abend"] = _ce.get("Abends", "")                 if _ce else ""
+                            st.session_state[f"{_epfx}_nacht"] = _ce.get("Nachts", "")                 if _ce else ""
+                            st.session_state[f"{_epfx}_kom"]   = _ce.get("Kommentar", "")              if _ce else ""
+
+                    # Toggle button — only render supplements when open
+                    _cat_ex_key = f"_cat_ex_{_cat_slug}"
+                    _is_open = st.session_state.get(_cat_ex_key, False)
+                    _btn_icon = "▼" if _is_open else "▶"
+                    if st.button(f"{_btn_icon}  {category_name}", key=f"_cat_btn_{_cat_slug}", use_container_width=True):
+                        st.session_state[_cat_ex_key] = not _is_open
+                        st.rerun()
+
+                    if not _is_open:
+                        continue
+
+                    _seen_stripped = set()
+                    for row in supplement_rows:
+                        supplement_name = row["name"]
+                        _stripped = strip_dosage(supplement_name)
+                        if _stripped in _seen_stripped:
+                            continue
+                        _seen_stripped.add(_stripped)
+                        cols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
+                        cols[0].markdown(_stripped)
+
+                        gd_key   = f"{row['id']}_gesamt_dosierung"
+                        form_key = f"{row['id']}_darreichungsform"
+                        pe_key   = f"{row['id']}_pro_Einnahme"
+                        nue_key  = f"{row['id']}_Nuechtern"
+                        morg_key = f"{row['id']}_Morgens"
+                        mitt_key = f"{row['id']}_Mittags"
+                        abend_key= f"{row['id']}_Abends"
+                        nacht_key= f"{row['id']}_Nachts"
+                        com_key  = f"{row['id']}_comment"
+
+                        loaded_prescription = None
+                        for p in (st.session_state.nem_prescriptions or []):
+                            if p.get("name") == supplement_name:
+                                loaded_prescription = p
+                                break
+
+                        if gd_key not in st.session_state and loaded_prescription:
+                            st.session_state[gd_key]   = loaded_prescription.get("Gesamt-dosierung","")
+                            st.session_state[form_key] = loaded_prescription.get("Darreichungsform", DEFAULT_FORMS.get(supplement_name,"Kapseln"))
+                            st.session_state[pe_key]   = loaded_prescription.get("Pro Einnahme","")
+                            st.session_state[nue_key]  = loaded_prescription.get("Nüchtern","")
+                            st.session_state[morg_key] = loaded_prescription.get("Morgens","")
+                            st.session_state[mitt_key] = loaded_prescription.get("Mittags","")
+                            st.session_state[abend_key]= loaded_prescription.get("Abends","")
+                            st.session_state[nacht_key]= loaded_prescription.get("Nachts","")
+                            st.session_state[com_key]  = loaded_prescription.get("Kommentar","")
+
+                        i_gd    = st.session_state.get(gd_key,    "")
+                        i_form  = st.session_state.get(form_key,  DEFAULT_FORMS.get(supplement_name,"Kapseln"))
+                        i_pe    = st.session_state.get(pe_key,    "")
+                        i_nue   = st.session_state.get(nue_key,   "")
+                        i_morg  = st.session_state.get(morg_key,  "")
+                        i_mitt  = st.session_state.get(mitt_key,  "")
+                        i_abend = st.session_state.get(abend_key, "")
+                        i_nacht = st.session_state.get(nacht_key, "")
+                        i_com   = st.session_state.get(com_key,   "")
+
+                        gd_val = i_gd  # kept in DB; not shown in UI
+
+                        dosage_presets = ["Kapseln","Lösung","Tabletten","Pulver","Tropfen","Sachet","Öl","Spray","Creme","Gel","Flüssig","Tee","Pflaster"]
+                        sel_form = cols[1].selectbox("", dosage_presets,
+                            index=dosage_presets.index(i_form) if i_form in dosage_presets else 0,
+                            key=form_key, label_visibility="collapsed", accept_new_options=True)
+
+                        pe_val = i_pe  # kept in DB; not shown in UI
+
+                        dose_options = ["","1","2","3","4","5"]
+                        nue_val  = cols[2].selectbox("", dose_options, index=dose_options.index(i_nue)   if i_nue   in dose_options else 0, key=nue_key,  label_visibility="collapsed")
+                        morg_val = cols[3].selectbox("", dose_options, index=dose_options.index(i_morg)  if i_morg  in dose_options else 0, key=morg_key, label_visibility="collapsed")
+                        mitt_val = cols[4].selectbox("", dose_options, index=dose_options.index(i_mitt)  if i_mitt  in dose_options else 0, key=mitt_key, label_visibility="collapsed")
+                        abend_val= cols[5].selectbox("", dose_options, index=dose_options.index(i_abend) if i_abend in dose_options else 0, key=abend_key,label_visibility="collapsed")
+                        nacht_val= cols[6].selectbox("", dose_options, index=dose_options.index(i_nacht) if i_nacht in dose_options else 0, key=nacht_key,label_visibility="collapsed")
+                        comment  = cols[7].text_input("", key=com_key, placeholder="Kommentar", value=i_com or "", label_visibility="collapsed")
+
+                        all_supplements_data.append({
+                            "name": supplement_name, "Gesamt-dosierung": gd_val,
+                            "Darreichungsform": sel_form, "Pro Einnahme": pe_val,
+                            "Nüchtern": nue_val, "Morgens": morg_val, "Mittags": mitt_val,
+                            "Abends": abend_val, "Nachts": nacht_val, "Kommentar": comment
+                        })
+
+                    # ── 3 per-category extra rows ───────────────────────
+                    def _edi_cx(v, _d=_extra_dose_opts): return _d.index(v) if v in _d else 0
+                    for _xi in range(1, 4):
+                        _epfx = f"nem_cx_{_cat_slug}_{_xi}"
+                        _ecols = st.columns([2.2, 1.3, 0.7, 0.7, 0.7, 0.7, 0.7, 3.5])
+                        _ecols[0].text_input("", key=f"{_epfx}_name", placeholder="Supplement...", label_visibility="collapsed")
+                        _ef_cx = st.session_state.get(f"{_epfx}_form", "Kapseln")
+                        _ecols[1].selectbox("", _extra_form_opts,
+                            index=_extra_form_opts.index(_ef_cx) if _ef_cx in _extra_form_opts else 0,
+                            key=f"{_epfx}_form", label_visibility="collapsed")
+                        _ecols[2].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nue","")),   key=f"{_epfx}_nue",   label_visibility="collapsed")
+                        _ecols[3].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_morg","")),  key=f"{_epfx}_morg",  label_visibility="collapsed")
+                        _ecols[4].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_mitt","")),  key=f"{_epfx}_mitt",  label_visibility="collapsed")
+                        _ecols[5].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_abend","")), key=f"{_epfx}_abend", label_visibility="collapsed")
+                        _ecols[6].selectbox("", _extra_dose_opts, index=_edi_cx(st.session_state.get(f"{_epfx}_nacht","")), key=f"{_epfx}_nacht", label_visibility="collapsed")
+                        _ecols[7].text_input("", key=f"{_epfx}_kom", placeholder="Kommentar", label_visibility="collapsed")
 
             if st.button("NEM PDF generieren", key="nem_pdf_button"):
                 # Build PDF data from session state keys so closed categories are included
@@ -2461,7 +2479,7 @@ def main():
                     _icon = f'<span class="info-icon" data-tooltip="{_tt}">ⓘ</span>' if show_icon else ''
                     st.markdown(
                         f'<div style="display:flex;align-items:center;gap:4px;margin-top:8px;">'
-                        f'<span style="font-size:14px;white-space:nowrap;font-family:DM Sans,sans-serif;">{label}</span>'
+                        f'<span style="font-size:13px;font-family:DM Sans,sans-serif;">{label}</span>'
                         f'{_icon}</div>',
                         unsafe_allow_html=True)
                 with cb_cols[2]:
