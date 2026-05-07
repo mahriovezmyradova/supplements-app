@@ -752,6 +752,11 @@ class PDF(FPDF):
         self._patient_name = patient_name
 
     def header(self):
+        _is_portrait = self.w < self.h
+        _addr_w = 50 if _is_portrait else 62
+        _addr_x = self.w - (self.r_margin or 10) - _addr_w
+        _title_x = 50
+        _title_w = max(10, _addr_x - _title_x - 5)
         if os.path.exists("clinic_logo.png"):
             try:
                 self.image("clinic_logo.png", 10, 8, 40)
@@ -759,14 +764,15 @@ class PDF(FPDF):
             except:
                 pass
         self.set_font("Helvetica", "B", 16)
-        self.set_xy(50, 13)
-        self.cell(180, 10, self._tab_title, 0, 0, "C")
+        self.set_xy(_title_x, 13)
+        self.cell(_title_w, 10, self._tab_title, 0, 0, "C")
         self.set_font("Helvetica", "", 9)
-        self.set_xy(228, 8)
-        self.multi_cell(62, 4.5,
+        self.set_xy(_addr_x, 8)
+        self.multi_cell(_addr_w, 4.5,
             "Clausewitzstr. 2\n10629 Berlin-Charlottenburg\n+49 30 6633110\ninfo@revitaclinic.de\nwww.revitaclinic.de",
             0, "R")
         self.set_text_color(0, 0, 0)
+        self.set_x(self.l_margin or 10)
         self.ln(10)
 
     def footer(self):
@@ -1207,29 +1213,24 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
                         if sub: rows[-1] = (rows[-1][0], clean_text(", ".join(sub)+(" | "+rows[-1][1] if rows[-1][1] else ""))) + rows[-1][2:]
             # Ernaehrungsberatung + sub-items as nested rows
             if _prescribed("ernaehrung"):
-                _add_row("Ernaehrungsberatung", "ernaehrung", "bio", "ernaehrung_comment")
-                _ern_ref = rows[-1] if rows else None
-                _ern_ws, _ern_we, _ern_ds, _ern_de, _ern_fr = (
-                    (_ern_ref[2], _ern_ref[3], _ern_ref[4], _ern_ref[5], _ern_ref[6])
-                    if _ern_ref else ("","","","",""))
+                _ern_subs = []
                 for _sk, _slbl, _scmt in [
-                    ("lowcarb","  -> Low Carb Ernaehrung","lowcarb_comment"),
-                    ("fasten","  -> Intermittierendes Fasten","fasten_comment"),
-                    ("krebsdiaet","  -> Krebs Diaet","krebsdiaet_comment"),
-                    ("ketogene","  -> Ketogene Ernaehrung","ketogene_comment"),
-                    ("basisch","  -> Basische Ernaehrung","basisch_comment"),
+                    ("lowcarb","Low Carb Ernaehrung","lowcarb_comment"),
+                    ("fasten","Intermittierendes Fasten","fasten_comment"),
+                    ("krebsdiaet","Krebs Diaet","krebsdiaet_comment"),
+                    ("ketogene","Ketogene Ernaehrung","ketogene_comment"),
+                    ("basisch","Basische Ernaehrung","basisch_comment"),
                 ]:
-                    if _prescribed(_sk) and _slbl not in seen_labels:
-                        seen_labels.add(_slbl)
-                        rows.append((clean_text(_slbl), clean_text(supplements.get(_scmt,"") or ""),
-                                     _ern_ws, _ern_we, _ern_ds, _ern_de, _ern_fr))
-                for _sk, _slbl in [("naehrstoff_ausgleich","  -> Naehrstoffmaengel ausgleichen"),
-                                    ("therapie_sonstiges","  -> Sonstiges")]:
-                    if supplements.get(_sk + "_cb", False) and _slbl not in seen_labels:
-                        seen_labels.add(_slbl)
-                        _detail = clean_text(supplements.get(_sk, "") or "")
-                        rows.append((clean_text(_slbl), _detail,
-                                     _ern_ws, _ern_we, _ern_ds, _ern_de, _ern_fr))
+                    if _prescribed(_sk):
+                        _scmt_v = clean_text(supplements.get(_scmt, "") or "")
+                        _ern_subs.append(_slbl + (f" ({_scmt_v})" if _scmt_v else ""))
+                for _sk, _slbl in [("naehrstoff_ausgleich","Naehrstoffmaengel ausgleichen"),
+                                    ("therapie_sonstiges","Sonstiges")]:
+                    if supplements.get(_sk + "_cb", False):
+                        _d = clean_text(supplements.get(_sk, "") or "")
+                        _ern_subs.append(_slbl + (f": {_d}" if _d else ""))
+                _ern_label = "Ernaehrungsberatung" + (": " + ", ".join(_ern_subs) if _ern_subs else "")
+                _add_row(_ern_label, "ernaehrung", "bio", None)
             for key, lbl in [("zwischengespraech_4","Zwischengespraech 4 Wochen (1/2h)"),
                               ("zwischengespraech_8","Zwischengespraech 8 Wochen (1/2h)")]:
                 if _prescribed(key):
@@ -1761,9 +1762,9 @@ def patient_inputs():
         tw_besprochen = st.radio("TW besprochen?", ["Ja","Nein"], horizontal=True,
             index=0 if default_tw_besprochen=="Ja" else 1, key="tw_besprochen_input")
 
-    _al_c1, _al_c2 = st.columns([1.5, 6.5])
+    _al_c1, _al_c2 = st.columns([1.5, 6.5], vertical_alignment="center")
     with _al_c1:
-        st.markdown('<div style="margin-top:1.9rem;font-weight:600;">Bekannte Allergien:</div>', unsafe_allow_html=True)
+        st.markdown("**Bekannte Allergien:**")
     with _al_c2:
         bekannte_allergie = st.text_input("", value=default_allergie,
             placeholder="Allergien...", key="allergie_input", label_visibility="collapsed")
@@ -2181,14 +2182,15 @@ def main():
             bewegung, bewegung_comment = tight_row("Bewegung", "bewegung", "bewegung_comment",
                 tp.get("bewegung", False), tp.get("bewegung_comment", ""))
 
-            # Check if any sub-item was previously saved → auto-check parent
+            # Auto-check parent if any sub-item is saved OR currently checked in widget state
             _sub_ern_keys = ["lowcarb","fasten","krebsdiaet","ketogene","basisch",
                              "naehrstoff_ausgleich_cb","therapie_sonstiges_cb"]
-            _any_sub_ern_saved = any(tp.get(k, False) for k in _sub_ern_keys)
-            _ernaehrung_default = tp.get("ernaehrung", False) or _any_sub_ern_saved
+            _any_sub_ern_saved  = any(tp.get(k, False) for k in _sub_ern_keys)
+            _any_sub_widget     = any(bool(st.session_state.get(k, False)) for k in _sub_ern_keys)
+            _ernaehrung_default = tp.get("ernaehrung", False) or _any_sub_ern_saved or _any_sub_widget
 
-            ernaehrung, ernaehrung_comment = tight_row("Ernährungsberatung", "ernaehrung", "ernaehrung_comment",
-                _ernaehrung_default, tp.get("ernaehrung_comment", ""))
+            ernaehrung = _row("Ernährungsberatung", "ernaehrung", _ernaehrung_default, "ernaehrung", "bio")
+            ernaehrung_comment = ""
 
             # Sub-items — always enabled so user can check them independently (parent auto-checks)
             def sub_ern_row(label, key_cb, key_input, cb_val, input_val):
@@ -2407,7 +2409,7 @@ def main():
                                     loaded_prescription = p
                                     break
 
-                            if gd_key not in st.session_state and loaded_prescription:
+                            if loaded_prescription and (_do_nem_cat_seed or gd_key not in st.session_state):
                                 st.session_state[gd_key]   = loaded_prescription.get("Gesamt-dosierung","")
                                 st.session_state[form_key] = loaded_prescription.get("Darreichungsform", DEFAULT_FORMS.get(supplement_name,"Kapseln"))
                                 st.session_state[pe_key]   = loaded_prescription.get("Pro Einnahme","")
@@ -2417,6 +2419,16 @@ def main():
                                 st.session_state[abend_key]= loaded_prescription.get("Abends","")
                                 st.session_state[nacht_key]= loaded_prescription.get("Nachts","")
                                 st.session_state[com_key]  = loaded_prescription.get("Kommentar","")
+                            elif _do_nem_cat_seed:
+                                st.session_state[gd_key]   = ""
+                                st.session_state[form_key] = DEFAULT_FORMS.get(supplement_name, "Kapseln")
+                                st.session_state[pe_key]   = ""
+                                st.session_state[nue_key]  = ""
+                                st.session_state[morg_key] = ""
+                                st.session_state[mitt_key] = ""
+                                st.session_state[abend_key]= ""
+                                st.session_state[nacht_key]= ""
+                                st.session_state[com_key]  = ""
 
                             i_gd    = st.session_state.get(gd_key,    "")
                             i_form  = st.session_state.get(form_key,  DEFAULT_FORMS.get(supplement_name,"Kapseln"))
@@ -2702,13 +2714,13 @@ def main():
         with st.expander("Extras", expanded=inf.get("_sec_zusaetze_open", False)):
             _inf_sched_header()
             import re as _re_inf
-            _ZUSATZ_ALL = [
-                "Auf NaCl 50 ml", "Auf NaCl 100 ml", "Auf NaCl 250 ml", "Auf NaCl 500ml", "Auf 1000ml",
+            _ZUSATZ_ITEMS = [
                 "Vit.B Komplex", "Vit.B6/B12/Folsäure", "Vit.D 300 kIE", "Vit.B3", "Biotin",
                 "Glycin", "Cholincitrat", "Zink inject", "Magnesium 400mg", "TAD (red.Glut.)",
                 "Arginin", "Glutamin", "Taurin", "Ornithin", "Prolin/Lysin",
             ]
-            _QTY_OPTS = ["1x", "2x", "3x", "4x", "5x"]
+            _NACL_OPTS = ["—", "Auf NaCl 50 ml", "Auf NaCl 100 ml", "Auf NaCl 250 ml", "Auf NaCl 500ml", "Auf 1000ml"]
+            _QTY_OPTS  = ["1x", "2x", "3x", "4x", "5x"]
             for _ei in range(1, 4):
                 _slug   = f"inf_extra{_ei}"
                 _cb_key = _slug + "_cb"
@@ -2727,12 +2739,12 @@ def main():
                 infusion_schedule_data[_slug + "_text"] = _val
                 infusion_schedule_data[_cb_key] = _checked
 
-                # Zusätze multiselect under this row
+                # Zutaten multiselect (ingredients only — NaCl handled separately)
                 _ms_key    = f"{_slug}_zusatz_select"
                 _saved_sel = inf.get(f"{_slug}_zusaetze_list", [])
                 if not isinstance(_saved_sel, list): _saved_sel = []
-                _selected  = st.multiselect("Zusätze auswählen", _ZUSATZ_ALL,
-                    default=[x for x in _saved_sel if x in _ZUSATZ_ALL],
+                _selected  = st.multiselect("Zusätze auswählen", _ZUSATZ_ITEMS,
+                    default=[x for x in _saved_sel if x in _ZUSATZ_ITEMS],
                     key=_ms_key, disabled=not _checked)
                 _qty_data = {}
                 if _selected:
@@ -2745,8 +2757,18 @@ def main():
                             _qty_data[_item] = st.selectbox(_item, _QTY_OPTS,
                                 index=_QTY_OPTS.index(_sv_q) if _sv_q in _QTY_OPTS else 0,
                                 key=_qkey)
-                _comment = ", ".join(f"{n} ({q})" for n, q in _qty_data.items()) if _qty_data else ", ".join(_selected)
-                infusion_schedule_data[f"{_slug}_comment"]       = _comment
+                # NaCl — radio (single choice), NOT included in PDF comment
+                _nacl_key   = f"{_slug}_nacl_radio"
+                _saved_nacl = inf.get(f"{_slug}_nacl", "—")
+                if _saved_nacl not in _NACL_OPTS: _saved_nacl = "—"
+                st.radio("NaCl:", _NACL_OPTS,
+                    index=_NACL_OPTS.index(_saved_nacl),
+                    key=_nacl_key, horizontal=True, disabled=not _checked,
+                    label_visibility="visible")
+                _nacl_sel = st.session_state.get(_nacl_key, "—")
+                infusion_schedule_data[f"{_slug}_nacl"] = _nacl_sel if _nacl_sel != "—" else ""
+                # PDF comment: ingredient names only (no quantities, no NaCl)
+                infusion_schedule_data[f"{_slug}_comment"]       = ", ".join(_selected)
                 infusion_schedule_data[f"{_slug}_zusaetze_list"] = _selected
                 for _item, _q in _qty_data.items():
                     _qs = _re_inf.sub(r'[^a-z0-9]+', '_', _item.lower()).strip('_')
