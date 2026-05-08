@@ -1393,12 +1393,12 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
 # =========================================================
 def generate_notes_pdf(patient, notes_text):
     patient_name = patient.get("patient", "") if patient else ""
-    pdf = PDF("P", "mm", "A4",
+    pdf = PDF("L", "mm", "A4",
               tab_title="THERAPIEKONZEPT - NOTIZEN",
               patient_name=patient_name)
     pdf.alias_nb_pages()
     pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(auto=True, margin=20)
 
     def _cn(t):
         if not t: return ""
@@ -1406,20 +1406,66 @@ def generate_notes_pdf(patient, notes_text):
             t = str(t).replace(src, dst)
         return t
 
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(40, 6, "Patient:", 0, 0)
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, _cn(patient_name), 0, 1)
-    pdf.ln(6)
+    TW = 277   # landscape A4: 297mm - 10mm left - 10mm right
+    LH = 6
+    LM = pdf.l_margin
 
-    pdf.set_font("Helvetica", "", 10)
-    _bw = getattr(pdf, "epw", None) or max(10, pdf.w - pdf.l_margin - pdf.r_margin)
+    def _section_header(suffix=""):
+        pdf.set_fill_color(38, 96, 65)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_x(LM)
+        pdf.cell(TW, 7, f"  NOTIZEN & BEMERKUNGEN{suffix}", 1, 1, "L", True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Helvetica", "", 9)
+
+    def _maybe_new_page():
+        if pdf.get_y() + LH > pdf.page_break_trigger:
+            pdf.add_page()
+            _section_header(" (Fortsetzung)")
+
+    def _row(text):
+        _maybe_new_page()
+        pdf.set_x(LM)
+        pdf.cell(TW, LH, (" " + text) if text else "", "LR", 1, "L")
+
+    # Table header row
+    _section_header()
+
+    # Patient name subrow
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_x(LM)
+    pdf.cell(28, LH, " Patient:", 1, 0, "L")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(TW - 28, LH, " " + _cn(patient_name), 1, 1, "L")
+    pdf.ln(1)
+
+    # Notes content — word-wrap each user line into table rows
+    pdf.set_font("Helvetica", "", 9)
+    max_w = TW - 6   # leave small text margin inside cell
+
     for line in (_cn(notes_text) or "").split("\n"):
-        pdf.set_x(pdf.l_margin)
-        if line.strip():
-            pdf.multi_cell(_bw, 6, line, 0, "L")
-        else:
-            pdf.ln(6)
+        if not line.strip():
+            _row("")
+            continue
+        words = line.split(" ")
+        current = ""
+        for word in words:
+            candidate = (current + " " + word).lstrip() if current else word
+            if pdf.get_string_width(candidate) <= max_w:
+                current = candidate
+            else:
+                if current:
+                    _row(current)
+                # Word alone wider than cell? render anyway (rare edge case)
+                current = word
+        if current:
+            _row(current)
+
+    # Close table with bottom border line
+    pdf.set_x(LM)
+    pdf.cell(TW, 0, "", "T")
+
     return bytes(pdf.output(dest="S"))
 
 
