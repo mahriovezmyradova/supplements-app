@@ -1244,7 +1244,8 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             ("revita_relax","RevitaRelax"),("revita_fit","RevitaFit"),
             ("revita_hangover","RevitaHangover"),("revita_beauty","RevitaBeauty"),
             ("revita_antiaging","RevitaAnti-Aging"),("revita_detox","RevitaDetox"),
-            ("revita_chelate","RevitaChelate"),("revita_liver","RevitaLiver"),
+            ("revita_chelate_1","RevitaChelate I"),("revita_chelate_2","RevitaChelate II"),
+            ("revita_liver","RevitaLiver"),
             ("revita_leakygut","RevitaLeaky-gut"),("revita_infection","RevitaInfection"),
             ("revita_joint","RevitaJoint"),
             ("mito_energy","Mito-Energy Behandlung"),("oxyvenierung","Oxyvenierung"),
@@ -1263,7 +1264,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             if _cb and _txt and str(_txt).strip():
                 _add_row(str(_txt), f"inf_custom{idx}", "inf", None)
         for i in range(1, 4):
-            for sec in ("haupt","bio","med","gesp","inf"):
+            for sec in ("haupt","bio","med","sonstiges","gesp","inf"):
                 slug   = f"{sec}_extra{i}"
                 txt    = supplements.get(slug + "_text", "")
                 cb_val = supplements.get(slug + "_cb", True)
@@ -1412,8 +1413,13 @@ def generate_notes_pdf(patient, notes_text):
     pdf.ln(6)
 
     pdf.set_font("Helvetica", "", 10)
+    _bw = getattr(pdf, "epw", None) or max(10, pdf.w - pdf.l_margin - pdf.r_margin)
     for line in (_cn(notes_text) or "").split("\n"):
-        pdf.multi_cell(0, 6, line, 0, "L")
+        pdf.set_x(pdf.l_margin)
+        if line.strip():
+            pdf.multi_cell(_bw, 6, line, 0, "L")
+        else:
+            pdf.ln(6)
     return bytes(pdf.output(dest="S"))
 
 
@@ -1440,13 +1446,13 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         return date.today()
 
     # ── Patient detail widgets ──
-    st.session_state["geburtsdatum_input"]                = _dt(pd_.get("geburtsdatum"))
+    st.session_state["geburtsdatum_input"]                = _dt(pd_.get("geburtsdatum")) if pd_.get("geburtsdatum") else None
     st.session_state["therapiebeginn_input"]              = _dt(pd_.get("therapiebeginn"))
     st.session_state["geschlecht_input"]                  = pd_.get("geschlecht","M")
-    try:    st.session_state["groesse_input"]             = int(pd_.get("groesse") or 0)
-    except: st.session_state["groesse_input"]             = 0
-    try:    st.session_state["gewicht_input"]             = int(pd_.get("gewicht") or 0)
-    except: st.session_state["gewicht_input"]             = 0
+    try:    st.session_state["groesse_input"]             = int(pd_.get("groesse")) if pd_.get("groesse") else None
+    except: st.session_state["groesse_input"]             = None
+    try:    st.session_state["gewicht_input"]             = int(pd_.get("gewicht")) if pd_.get("gewicht") else None
+    except: st.session_state["gewicht_input"]             = None
     try:    st.session_state["dauer_input"]               = int(pd_.get("dauer") or 6)
     except: st.session_state["dauer_input"]               = 6
     st.session_state["tw_besprochen_input"]               = pd_.get("tw_besprochen","Ja")
@@ -1546,7 +1552,7 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
     for ik in ["revita_immune","revita_immune_plus","revita_heal","revita_bludder",
                "revita_ferro","revita_energy","revita_focus","revita_nad","revita_relax",
                "revita_fit","revita_hangover","revita_beauty","revita_antiaging",
-               "revita_detox","revita_chelate","revita_liver","revita_leakygut",
+               "revita_detox","revita_chelate_1","revita_chelate_2","revita_liver","revita_leakygut",
                "revita_infection","revita_joint","std_mito_energy","std_oxyvenierung",
                "std_schwermetalltest","std_procain_basen","std_artemisinin",
                "std_perioperative","std_nerven_aufbau",
@@ -1593,7 +1599,7 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
     # These persist in session_state across patient switches, so must be explicitly reset.
     _tp_data  = tp  or {}
     _inf_data = inf or {}
-    for sec in ["haupt", "bio", "med"]:
+    for sec in ["haupt", "bio", "med", "sonstiges"]:
         for i in range(1, 4):
             slug = f"{sec}_extra{i}"
             st.session_state[slug + "_cb"]         = bool(_tp_data.get(slug + "_cb", False))
@@ -1723,10 +1729,10 @@ def patient_inputs():
             except: return date.today()
         return v if isinstance(v, date) else date.today()
 
-    default_geburtsdatum   = parse_date(pdata.get("geburtsdatum", date.today()))
+    default_geburtsdatum   = parse_date(pdata.get("geburtsdatum")) if pdata.get("geburtsdatum") else None
     default_geschlecht     = pdata.get("geschlecht", "M")
-    default_groesse        = int(pdata.get("groesse", 0)) if pdata.get("groesse") else 0
-    default_gewicht        = int(pdata.get("gewicht", 0)) if pdata.get("gewicht") else 0
+    default_groesse        = int(pdata.get("groesse")) if pdata.get("groesse") else None
+    default_gewicht        = int(pdata.get("gewicht")) if pdata.get("gewicht") else None
     default_therapiebeginn = parse_date(pdata.get("therapiebeginn", date.today()))
     dauer_value            = pdata.get("dauer", 6)
     try:    default_dauer_value = int(dauer_value)
@@ -1744,14 +1750,15 @@ def patient_inputs():
     c1,c2,c3,c4,c5,c6,c7 = st.columns(7)
     with c1:
         geburtsdatum = st.date_input("Geburtsdatum", value=default_geburtsdatum,
-            min_value=date(1900,1,1), max_value=date.today(), format="DD.MM.YYYY", key="geburtsdatum_input")
+            min_value=date(1900,1,1), max_value=date.today(), format="DD.MM.YYYY", key="geburtsdatum_input",
+            help="Optional")
     with c2:
         geschlecht = st.radio("Geschlecht", ["M","W"], horizontal=True,
             index=0 if default_geschlecht=="M" else 1, key="geschlecht_input")
     with c3:
-        groesse = st.number_input("Grösse (cm)", min_value=0, value=default_groesse, key="groesse_input")
+        groesse = st.number_input("Grösse (cm)", min_value=0, value=default_groesse, key="groesse_input", placeholder="—")
     with c4:
-        gewicht = st.number_input("Gewicht (kg)", min_value=0, value=default_gewicht, key="gewicht_input")
+        gewicht = st.number_input("Gewicht (kg)", min_value=0, value=default_gewicht, key="gewicht_input", placeholder="—")
     with c5:
         therapiebeginn = st.date_input("Therapiebeginn", value=default_therapiebeginn,
             format="DD.MM.YYYY", key="therapiebeginn_input")
@@ -2134,6 +2141,9 @@ def main():
                 tp.get("infektion_virus_cb", False), tp.get("infektion_virus", ""),
                 "infektion_virus", "haupt")
             _extra_rows("haupt", "haupt", tp, patient["therapiebeginn"], patient["dauer"], therapieplan_schedule_data)
+
+            st.markdown('<div class="section-subheader">Sonstiges</div>', unsafe_allow_html=True)
+            _extra_rows("sonstiges", "haupt", tp, patient["therapiebeginn"], patient["dauer"], therapieplan_schedule_data)
 
         # ---- SECTION 3: Biologische & Komplementäre Therapien ----
         with st.expander("Biologische & Komplementäre Therapien", expanded=tp.get("_sec_bio_open", False)):
@@ -2653,9 +2663,12 @@ def main():
             revita_detox       = _inf_row("RevitaDetox",
                 "revita_detox",
                 "1x DetoxDrip (Elektrolyte, AOCT, Lysin,\n  Methionin, Glutamin, Carnitin)\n1x TAD\n250 ml NaCl")
-            revita_chelate     = _inf_row("RevitaChelate",
-                "revita_chelate",
-                "CHELATE I:\n1x NaBic | 1x DMSA | 1x Alpha-Liponsaeure\n  (je 100ml NaCl)\n1x TAD (spritzen) | 1x Ca-EDTA (250ml NaCl)\n\nCHELATE II:\n1x NaBic | 1x DMPS | 1x Alpha-Liponsaeure\n  (je 100ml NaCl)\n1x TAD (spritzen) | 1x Ca-EDTA (250ml NaCl)")
+            revita_chelate_1   = _inf_row("RevitaChelate I",
+                "revita_chelate_1",
+                "1x NaBic | 1x DMSA | 1x Alpha-Liponsaeure\n  (je 100ml NaCl)\n1x TAD (spritzen) | 1x Ca-EDTA (250ml NaCl)")
+            revita_chelate_2   = _inf_row("RevitaChelate II",
+                "revita_chelate_2",
+                "1x NaBic | 1x DMPS | 1x Alpha-Liponsaeure\n  (je 100ml NaCl)\n1x TAD (spritzen) | 1x Ca-EDTA (250ml NaCl)")
             revita_liver       = _inf_row("RevitaLiver",
                 "revita_liver",
                 "1x Alpha Liponsaeure (100ml NaCl)\n2x TAD | 2x Elektrolyte\n3x Hepar Comp Heal | 1x AOCT\n1x Cholincitrat | 1x Methionin\n1x Aminovital | 1x B-Komplex | 1x B6\n250 ml NaCl")
@@ -2711,7 +2724,7 @@ def main():
             anti_oxidantien      = _inf_row("Anti-Oxidantien Infusion",                      "std_anti_oxidantien", "Anti-Oxidantien Infusion",           show_icon=False)
             infektions_infusion  = _inf_row("Infektions-Infusion / H2O2",                   "infektions_infusion", "Infektions-Infusion / H2O2",         show_icon=False)
 
-        with st.expander("Extras", expanded=inf.get("_sec_zusaetze_open", False)):
+        with st.expander("Individuelle Infusionen", expanded=inf.get("_sec_zusaetze_open", False)):
             _inf_sched_header()
             import re as _re_inf
             _ZUSATZ_ITEMS = [
@@ -2784,7 +2797,8 @@ def main():
             "revita_relax": revita_relax, "revita_fit": revita_fit,
             "revita_hangover": revita_hangover, "revita_beauty": revita_beauty,
             "revita_antiaging": revita_antiaging, "revita_detox": revita_detox,
-            "revita_chelate": revita_chelate, "revita_liver": revita_liver,
+            "revita_chelate_1": revita_chelate_1, "revita_chelate_2": revita_chelate_2,
+            "revita_liver": revita_liver,
             "revita_leakygut": revita_leakygut, "revita_infection": revita_infection,
             "revita_joint": revita_joint,
             # std_* keys match the key_prefix used in _inf_row → timing stored correctly
