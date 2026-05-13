@@ -1540,8 +1540,26 @@ def generate_notes_pdf(patient, notes_text, zp4="", zp12="", zp24=""):
 
 
 # =========================================================
-# PDF HISTORY HELPER
+# PDF DISPLAY HELPERS
 # =========================================================
+def _show_last_pdf(tab_type: str, patient_name: str):
+    """Show the most recently generated PDF for this tab (persists in session state)."""
+    _lpdf = st.session_state.get(f"_last_pdf_{tab_type}")
+    if not _lpdf or _lpdf.get("patient") != patient_name:
+        return
+    c1, c2 = st.columns([2, 2.5])
+    with c1:
+        st.markdown(
+            f"<div style='padding-top:7px;font-size:13px;color:#555'>"
+            f"Generiert: {_lpdf['generated_at']}</div>",
+            unsafe_allow_html=True)
+    with c2:
+        st.download_button(
+            "↓ PDF herunterladen", data=_lpdf["data"],
+            file_name=_lpdf["filename"], mime="application/pdf",
+            key=f"dl_last_{tab_type}")
+
+
 def _show_pdf_history(patient_name: str, pdf_type: str):
     """Render saved PDF history for a patient+tab. Call from inside a @st.fragment."""
     if not patient_name or not patient_name.strip():
@@ -2092,8 +2110,7 @@ def main():
     for k in ['show_delete_confirmation','show_save_success']:
         if k not in st.session_state:
             st.session_state[k] = False
-    if 'auto_download_pdf' not in st.session_state:
-        st.session_state.auto_download_pdf = None
+
     if 'nem_pdf_bytes' not in st.session_state:
         st.session_state.nem_pdf_bytes = None
 
@@ -2482,18 +2499,20 @@ def main():
         st.session_state.therapieplan_data = new_tp
 
         if st.button("Therapieplan PDF generieren", key="therapieplan_pdf_button"):
-            pdf_bytes = generate_pdf(patient, st.session_state.therapieplan_data, "THERAPIEPLAN")
-            _tp_fname = f"RevitaClinic_Therapieplan_{patient.get('patient','')}.pdf"
+            import datetime as _dg
             _tp_pname = patient.get("patient", "")
+            _tp_fname = f"RevitaClinic_Therapieplan_{_tp_pname}.pdf"
+            pdf_bytes = generate_pdf(patient, st.session_state.therapieplan_data, "THERAPIEPLAN")
+            st.session_state["_last_pdf_THERAPIEPLAN"] = {
+                "data": pdf_bytes, "filename": _tp_fname,
+                "patient": _tp_pname,
+                "generated_at": _dg.datetime.now().strftime("%d.%m.%Y %H:%M"),
+            }
             if _tp_pname.strip():
                 try: db.save_pdf(_tp_pname, "THERAPIEPLAN", _tp_fname, pdf_bytes)
                 except Exception: pass
-            st.session_state.auto_download_pdf = {
-                "data": pdf_bytes,
-                "filename": _tp_fname,
-                "mime": "application/pdf"
-            }
-            st.rerun(scope="app")
+            st.rerun(scope="fragment")
+        _show_last_pdf("THERAPIEPLAN", patient.get("patient", ""))
         _show_pdf_history(patient.get("patient", ""), "THERAPIEPLAN")
 
     with tabs[0]:
@@ -2713,21 +2732,22 @@ def main():
                                 "Abends": _eab, "Nachts": _ena, "Kommentar": _eko,
                             })
                 if pdf_data:
+                    import datetime as _dg
                     pdf_bytes = generate_pdf(patient, pdf_data, "NEM")
-                    _nem_fname = f"RevitaClinic_NEM_{patient.get('patient','')}.pdf"
                     _nem_pname = patient.get("patient", "")
+                    _nem_fname = f"RevitaClinic_NEM_{_nem_pname}.pdf"
+                    st.session_state["_last_pdf_NEM"] = {
+                        "data": pdf_bytes, "filename": _nem_fname,
+                        "patient": _nem_pname,
+                        "generated_at": _dg.datetime.now().strftime("%d.%m.%Y %H:%M"),
+                    }
                     if _nem_pname.strip():
                         try: db.save_pdf(_nem_pname, "NEM", _nem_fname, pdf_bytes)
                         except Exception: pass
-                    st.session_state.auto_download_pdf = {
-                        "data": pdf_bytes,
-                        "filename": _nem_fname,
-                        "mime": "application/pdf"
-                    }
-                    st.success(f"✅ PDF mit {len(pdf_data)} NEM-Supplement(en) generiert!")
-                    st.rerun(scope="app")
+                    st.rerun(scope="fragment")
                 else:
                     st.warning("⚠️ Keine NEM-Supplemente ausgewählt.")
+        _show_last_pdf("NEM", patient.get("patient", ""))
         _show_pdf_history(patient.get("patient", ""), "NEM")
 
     with tabs[1]:
@@ -3002,18 +3022,20 @@ def main():
         st.session_state.infusion_data = new_inf
 
         if st.button("Infusionstherapie PDF generieren", key="infusion_pdf_button"):
-            pdf_bytes = generate_pdf(patient, st.session_state.infusion_data, "INFUSIONSTHERAPIE")
-            _inf_fname = f"RevitaClinic_Infusionstherapie_{patient.get('patient','')}.pdf"
+            import datetime as _dg
             _inf_pname = patient.get("patient", "")
+            _inf_fname = f"RevitaClinic_Infusionstherapie_{_inf_pname}.pdf"
+            pdf_bytes = generate_pdf(patient, st.session_state.infusion_data, "INFUSIONSTHERAPIE")
+            st.session_state["_last_pdf_INFUSIONSTHERAPIE"] = {
+                "data": pdf_bytes, "filename": _inf_fname,
+                "patient": _inf_pname,
+                "generated_at": _dg.datetime.now().strftime("%d.%m.%Y %H:%M"),
+            }
             if _inf_pname.strip():
                 try: db.save_pdf(_inf_pname, "INFUSIONSTHERAPIE", _inf_fname, pdf_bytes)
                 except Exception: pass
-            st.session_state.auto_download_pdf = {
-                "data": pdf_bytes,
-                "filename": _inf_fname,
-                "mime": "application/pdf"
-            }
-            st.rerun(scope="app")
+            st.rerun(scope="fragment")
+        _show_last_pdf("INFUSIONSTHERAPIE", patient.get("patient", ""))
         _show_pdf_history(patient.get("patient", ""), "INFUSIONSTHERAPIE")
 
     with tabs[2]:
@@ -3059,17 +3081,19 @@ def main():
                 zp12=st.session_state.get("kt12_zielparameter_input", ""),
                 zp24=st.session_state.get("kt24_zielparameter_input", ""),
             )
-            _nz_fname = f"RevitaClinic_Notizen_{patient.get('patient','')}.pdf"
+            import datetime as _dg
             _nz_pname = patient.get("patient", "")
+            _nz_fname = f"RevitaClinic_Notizen_{_nz_pname}.pdf"
             if _nz_pname.strip():
                 try: db.save_pdf(_nz_pname, "NOTIZEN", _nz_fname, _pdf_bytes)
                 except Exception: pass
-            st.session_state.auto_download_pdf = {
-                "data": _pdf_bytes,
-                "filename": _nz_fname,
-                "mime": "application/pdf"
+            st.session_state["_last_pdf_NOTIZEN"] = {
+                "data": _pdf_bytes, "filename": _nz_fname,
+                "patient": _nz_pname,
+                "generated_at": _dg.datetime.now().strftime("%d.%m.%Y %H:%M"),
             }
-            st.rerun(scope="app")
+            st.rerun(scope="fragment")
+        _show_last_pdf("NOTIZEN", patient.get("patient", ""))
         _show_pdf_history(patient.get("patient", ""), "NOTIZEN")
 
     with tabs[3]:
@@ -3238,17 +3262,6 @@ def main():
                     st.session_state["_autosave_label"] = (
                         "Autosave: " + _dt_as.datetime.now().strftime("%d.%m.%Y %H:%M"))
 
-    # Auto-download PDF
-    if st.session_state.get("auto_download_pdf"):
-        pdf_data = st.session_state.auto_download_pdf
-        st.download_button(
-            "PDF herunterladen",
-            data=pdf_data["data"],
-            file_name=pdf_data["filename"],
-            mime=pdf_data["mime"],
-            key="auto_download"
-        )
-        st.session_state.auto_download_pdf = None
 
 
 if __name__ == "__main__":
