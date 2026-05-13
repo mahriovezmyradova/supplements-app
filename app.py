@@ -1771,9 +1771,12 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         st.session_state[slug + "_cb"]          = bool(_inf_data.get(slug + "_cb", False))
         st.session_state[slug + "_text_input"]  = _inf_data.get(slug + "_text", "")
         st.session_state[slug + "_comment_inp"] = _inf_data.get(slug + "_comment", "")
-    for j in range(1, 3):
-        st.session_state[f"inf_custom{j}_cb"]   = bool(_inf_data.get(f"inf_custom{j}_cb", False))
-        st.session_state[f"inf_custom{j}_text"]  = _inf_data.get(f"inf_custom{j}_text", "")
+    _inf_son_n = max(2, int(_inf_data.get("inf_sonstiges_count", 2)))
+    st.session_state["inf_sonstiges_count"] = _inf_son_n
+    for j in range(1, _inf_son_n + 1):
+        st.session_state[f"inf_custom{j}_cb"]          = bool(_inf_data.get(f"inf_custom{j}_cb", False))
+        st.session_state[f"inf_custom{j}_text"]         = _inf_data.get(f"inf_custom{j}_text", "")
+        st.session_state[f"inf_custom{j}_comment_inp"]  = _inf_data.get(f"inf_custom{j}_comment", "")
 
     # ── Per-category NEM extra rows: seed happens inside NEM tab on next render ──
     # Clear stale nem_cx_*, _nem_cat_names, and category open-state keys.
@@ -2862,32 +2865,35 @@ def main():
             mito_energy      = _inf_row("Mito-Energy Behandlung (Mito-Gerät, Wirkbooster)", "std_mito_energy",     "Mito-Energy Behandlung mit Wirkbooster", show_icon=False)
             oxyvenierung     = _inf_row("RevitaOxy",                                         "std_oxyvenierung",    "Preis: 50 EUR\nOxyvenierung",            show_icon=False)
 
-            # 2 additional free-text checkbox rows with timing
-            def _inf_custom_row(idx):
-                key_cb   = f"inf_custom{idx}_cb"
-                key_text = f"inf_custom{idx}_text"
-                key_slug = f"inf_custom{idx}"
-                cols = st.columns(INF_ROW_COLS)
-                with cols[0]:
-                    cb_c, txt_c = st.columns([0.07, 0.93])
-                    with cb_c:
-                        checked = st.checkbox("", value=inf.get(key_cb, False),
-                            key=key_cb, label_visibility="collapsed")
-                    with txt_c:
-                        txt = st.text_input("", value=inf.get(key_text, ""),
-                            key=key_text, placeholder=f"Zusatz {idx}...",
-                            label_visibility="collapsed", disabled=not checked)
+            _inf_son_key = "inf_sonstiges_count"
+            _inf_son_n = max(2, int(st.session_state.get(_inf_son_key, inf.get(_inf_son_key, 2))))
+            for _sci in range(1, _inf_son_n + 1):
+                _key_cb   = f"inf_custom{_sci}_cb"
+                _key_text = f"inf_custom{_sci}_text"
+                _key_slug = f"inf_custom{_sci}"
+                _scols = st.columns(INF_ROW_COLS)
+                with _scols[0]:
+                    _cb_c, _txt_c = st.columns([0.07, 0.93])
+                    with _cb_c:
+                        _checked_s = st.checkbox("", value=bool(inf.get(_key_cb, False)),
+                            key=_key_cb, label_visibility="collapsed")
+                    with _txt_c:
+                        _txt_s = st.text_input("", value=inf.get(_key_text, ""),
+                            key=_key_text, placeholder=f"Zusatz {_sci}...",
+                            label_visibility="collapsed", disabled=not _checked_s)
                 infusion_schedule_data.update(
-                    _inline_timing(checked, key_slug, patient["therapiebeginn"], patient["dauer"], "inf", inf, cols))
-                with cols[8]:
-                    cmt = st.text_input("", value=inf.get(f"{key_slug}_comment", ""),
-                        key=f"{key_slug}_comment_inp", placeholder="Kommentar...",
-                        label_visibility="collapsed", disabled=not checked)
-                infusion_schedule_data[f"{key_slug}_comment"] = cmt
-                return checked, txt
-
-            inf_custom1_cb, inf_custom1_text = _inf_custom_row(1)
-            inf_custom2_cb, inf_custom2_text = _inf_custom_row(2)
+                    _inline_timing(_checked_s, _key_slug, patient["therapiebeginn"], patient["dauer"], "inf", inf, _scols))
+                with _scols[8]:
+                    _cmt_s = st.text_input("", value=inf.get(f"{_key_slug}_comment", ""),
+                        key=f"{_key_slug}_comment_inp", placeholder="Kommentar...",
+                        label_visibility="collapsed", disabled=not _checked_s)
+                infusion_schedule_data[_key_cb]             = _checked_s
+                infusion_schedule_data[_key_text]           = _txt_s
+                infusion_schedule_data[f"{_key_slug}_comment"] = _cmt_s
+            if st.button("＋", key="inf_sonstiges_add", help="Zeile hinzufügen"):
+                st.session_state[_inf_son_key] = _inf_son_n + 1
+                st.rerun(scope="fragment")
+            infusion_schedule_data[_inf_son_key] = _inf_son_n
 
         with st.expander("Standard Infusionen", expanded=inf.get("_sec_standard_open", False)):
             _inf_sched_header()
@@ -2968,8 +2974,6 @@ def main():
             infusion_schedule_data[_inf_count_key] = _inf_n
 
         new_inf = {
-            "inf_custom1_cb": inf_custom1_cb, "inf_custom1_text": inf_custom1_text,
-            "inf_custom2_cb": inf_custom2_cb, "inf_custom2_text": inf_custom2_text,
             "revita_immune": revita_immune, "revita_immune_plus": revita_immune_plus,
             "revita_heal": revita_heal, "revita_bludder": revita_bludder,
             "revita_ferro": revita_ferro, "revita_energy": revita_energy,
