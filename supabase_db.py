@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 from datetime import date
 from typing import Optional, Dict, List, Any, Tuple
 import pandas as pd
@@ -302,6 +303,50 @@ class SupabaseDB:
             return True
         except Exception as e:
             print(f"save_app_setting error: {e}")
+            return False
+
+    # ──────────────────────────────────────────────────────────
+    # DELETE
+    # ──────────────────────────────────────────────────────────
+
+    # ──────────────────────────────────────────────────────────
+    # PDF HISTORY
+    # ──────────────────────────────────────────────────────────
+
+    def save_pdf(self, patient_name: str, pdf_type: str, filename: str, pdf_bytes: bytes) -> str | None:
+        try:
+            encoded = base64.b64encode(pdf_bytes).decode("utf-8")
+            resp = self.supabase.table("pdf_history").insert({
+                "patient_name": patient_name,
+                "pdf_type": pdf_type,
+                "filename": filename,
+                "pdf_data": encoded,
+            }).execute()
+            return resp.data[0]["id"] if resp.data else None
+        except Exception as e:
+            print(f"save_pdf error: {e}")
+            return None
+
+    def load_pdfs(self, patient_name: str, pdf_type: str) -> list:
+        try:
+            resp = self.supabase.table("pdf_history") \
+                .select("id, filename, generated_at, pdf_data") \
+                .eq("patient_name", patient_name) \
+                .eq("pdf_type", pdf_type) \
+                .order("generated_at", desc=True) \
+                .limit(10) \
+                .execute()
+            return resp.data or []
+        except Exception as e:
+            print(f"load_pdfs error: {e}")
+            return []
+
+    def delete_pdf(self, pdf_id: str) -> bool:
+        try:
+            self.supabase.table("pdf_history").delete().eq("id", pdf_id).execute()
+            return True
+        except Exception as e:
+            print(f"delete_pdf error: {e}")
             return False
 
     # ──────────────────────────────────────────────────────────

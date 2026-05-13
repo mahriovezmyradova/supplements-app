@@ -1540,6 +1540,43 @@ def generate_notes_pdf(patient, notes_text, zp4="", zp12="", zp24=""):
 
 
 # =========================================================
+# PDF HISTORY HELPER
+# =========================================================
+def _show_pdf_history(patient_name: str, pdf_type: str):
+    """Render saved PDF history for a patient+tab. Call from inside a @st.fragment."""
+    if not patient_name or not patient_name.strip():
+        return
+    history = db.load_pdfs(patient_name, pdf_type)
+    if not history:
+        return
+    st.markdown(
+        "<div style='font-size:12px;color:#888;margin:8px 0 4px 0;font-weight:600'>"
+        "Gespeicherte PDFs</div>",
+        unsafe_allow_html=True)
+    for rec in history:
+        _raw_dt = rec.get("generated_at", "")[:16].replace("T", " ")
+        try:
+            _pdf_bytes = base64.b64decode(rec["pdf_data"])
+        except Exception:
+            continue
+        _fname = rec.get("filename") or f"{pdf_type}_{_raw_dt}.pdf"
+        c1, c2, c3 = st.columns([1.6, 2, 0.2])
+        with c1:
+            st.markdown(
+                f"<div style='padding-top:7px;font-size:13px;color:#555'>{_raw_dt}</div>",
+                unsafe_allow_html=True)
+        with c2:
+            st.download_button(
+                "↓ PDF herunterladen", data=_pdf_bytes,
+                file_name=_fname, mime="application/pdf",
+                key=f"hist_dl_{pdf_type}_{rec['id']}")
+        with c3:
+            if st.button("−", key=f"hist_del_{pdf_type}_{rec['id']}", help="PDF löschen"):
+                db.delete_pdf(rec["id"])
+                st.rerun(scope="fragment")
+
+
+# =========================================================
 # PATIENT INPUTS
 # =========================================================
 def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
@@ -2438,12 +2475,17 @@ def main():
 
         if st.button("Therapieplan PDF generieren", key="therapieplan_pdf_button"):
             pdf_bytes = generate_pdf(patient, st.session_state.therapieplan_data, "THERAPIEPLAN")
+            _tp_fname = f"RevitaClinic_Therapieplan_{patient.get('patient','')}.pdf"
+            _tp_pname = patient.get("patient", "")
+            if _tp_pname.strip():
+                db.save_pdf(_tp_pname, "THERAPIEPLAN", _tp_fname, pdf_bytes)
             st.session_state.auto_download_pdf = {
                 "data": pdf_bytes,
-                "filename": f"RevitaClinic_Therapieplan_{patient.get('patient','')}.pdf",
+                "filename": _tp_fname,
                 "mime": "application/pdf"
             }
             st.rerun(scope="app")
+        _show_pdf_history(patient.get("patient", ""), "THERAPIEPLAN")
 
     with tabs[0]:
         _therapieplan_tab()
@@ -2663,15 +2705,20 @@ def main():
                             })
                 if pdf_data:
                     pdf_bytes = generate_pdf(patient, pdf_data, "NEM")
+                    _nem_fname = f"RevitaClinic_NEM_{patient.get('patient','')}.pdf"
+                    _nem_pname = patient.get("patient", "")
+                    if _nem_pname.strip():
+                        db.save_pdf(_nem_pname, "NEM", _nem_fname, pdf_bytes)
                     st.session_state.auto_download_pdf = {
                         "data": pdf_bytes,
-                        "filename": f"RevitaClinic_NEM_{patient.get('patient','')}.pdf",
+                        "filename": _nem_fname,
                         "mime": "application/pdf"
                     }
                     st.success(f"✅ PDF mit {len(pdf_data)} NEM-Supplement(en) generiert!")
                     st.rerun(scope="app")
                 else:
                     st.warning("⚠️ Keine NEM-Supplemente ausgewählt.")
+        _show_pdf_history(patient.get("patient", ""), "NEM")
 
     with tabs[1]:
         _nem_tab()
@@ -2945,12 +2992,17 @@ def main():
 
         if st.button("Infusionstherapie PDF generieren", key="infusion_pdf_button"):
             pdf_bytes = generate_pdf(patient, st.session_state.infusion_data, "INFUSIONSTHERAPIE")
+            _inf_fname = f"RevitaClinic_Infusionstherapie_{patient.get('patient','')}.pdf"
+            _inf_pname = patient.get("patient", "")
+            if _inf_pname.strip():
+                db.save_pdf(_inf_pname, "INFUSIONSTHERAPIE", _inf_fname, pdf_bytes)
             st.session_state.auto_download_pdf = {
                 "data": pdf_bytes,
-                "filename": f"RevitaClinic_Infusionstherapie_{patient.get('patient','')}.pdf",
+                "filename": _inf_fname,
                 "mime": "application/pdf"
             }
             st.rerun(scope="app")
+        _show_pdf_history(patient.get("patient", ""), "INFUSIONSTHERAPIE")
 
     with tabs[2]:
         _infusion_tab()
@@ -2995,12 +3047,17 @@ def main():
                 zp12=st.session_state.get("kt12_zielparameter_input", ""),
                 zp24=st.session_state.get("kt24_zielparameter_input", ""),
             )
+            _nz_fname = f"RevitaClinic_Notizen_{patient.get('patient','')}.pdf"
+            _nz_pname = patient.get("patient", "")
+            if _nz_pname.strip():
+                db.save_pdf(_nz_pname, "NOTIZEN", _nz_fname, _pdf_bytes)
             st.session_state.auto_download_pdf = {
                 "data": _pdf_bytes,
-                "filename": f"RevitaClinic_Notizen_{patient.get('patient','')}.pdf",
+                "filename": _nz_fname,
                 "mime": "application/pdf"
             }
             st.rerun(scope="app")
+        _show_pdf_history(patient.get("patient", ""), "NOTIZEN")
 
     with tabs[3]:
         _notizen_tab()
