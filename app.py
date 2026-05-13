@@ -507,10 +507,12 @@ def _diag_header():
 
 def _extra_rows(section_key, kp, data_store, therapiebeginn, dauer, schedule_dict,
                 no_auto_date=False, row_cols=None):
-    """3 free-text extra rows. Checkbox controls PDF inclusion.
+    """Free-text extra rows (min 3, expandable with +). Checkbox controls PDF inclusion.
     Pass row_cols=INF_ROW_COLS to get a Kommentar field in col[8]."""
     rc = row_cols or ROW_COLS
-    for i in range(1, 4):
+    _count_key = f"{section_key}_extra_count"
+    _n = max(3, int(st.session_state.get(_count_key, data_store.get(_count_key, 3))))
+    for i in range(1, _n + 1):
         slug    = f"{section_key}_extra{i}"
         cb_key  = slug + "_cb"
         cols    = st.columns(rc)
@@ -533,6 +535,10 @@ def _extra_rows(section_key, kp, data_store, therapiebeginn, dauer, schedule_dic
                     key=f"{slug}_comment_inp", placeholder="Kommentar...",
                     label_visibility="collapsed", disabled=not checked)
             schedule_dict[f"{slug}_comment"] = cmt
+    if st.button("＋", key=f"{section_key}_extra_add", help="Zeile hinzufügen"):
+        st.session_state[_count_key] = _n + 1
+        st.rerun(scope="fragment")
+    schedule_dict[_count_key] = _n
 
 
 def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, data_store, cols):
@@ -561,6 +567,16 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
     ds_key      = f"{key_prefix}_{slug}_date_start"
     de_key      = f"{key_prefix}_{slug}_date_end"
     freq_key    = f"{key_prefix}_{slug}_freq"
+
+    # Fast-path for unchecked rows: skip widget rendering, return stored values
+    if not is_checked:
+        return {
+            w_start_key: str(data_store.get(w_start_key, "0")),
+            w_end_key:   str(data_store.get(w_end_key, "0")),
+            ds_key:      data_store.get(ds_key),
+            de_key:      data_store.get(de_key),
+            freq_key:    str(data_store.get(freq_key, "")),
+        }
 
     # "0" = not filled (default); weeks 1..total follow
     week_opts = ["0"] + [str(w) for w in range(1, total_weeks + 1)]
@@ -1263,8 +1279,9 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
             _txt = supplements.get(f"inf_custom{idx}_text", "")
             if _cb and _txt and str(_txt).strip():
                 _add_row(str(_txt), f"inf_custom{idx}", "inf", None)
-        for i in range(1, 4):
-            for sec in ("haupt","bio","med","sonstiges","gesp","inf"):
+        for sec in ("haupt","bio","med","sonstiges","gesp","inf"):
+            _sec_n = max(3, int(supplements.get(f"{sec}_extra_count", 3)))
+            for i in range(1, _sec_n + 1):
                 slug   = f"{sec}_extra{i}"
                 txt    = supplements.get(slug + "_text", "")
                 cb_val = supplements.get(slug + "_cb", True)
@@ -1424,10 +1441,22 @@ def generate_notes_pdf(patient, notes_text):
             pdf.add_page()
             _section_header(" (Fortsetzung)")
 
+    import re as _re_bold
+
     def _row(text):
         _maybe_new_page()
+        y = pdf.get_y()
+        # Draw LR borders for this row
         pdf.set_x(LM)
-        pdf.cell(TW, LH, (" " + text) if text else "", "LR", 1, "L")
+        pdf.cell(TW, LH, "", "LR", 0, "L")
+        # Render text with inline bold support (**word**)
+        pdf.set_xy(LM + 1, y)
+        segs = _re_bold.split(r'\*\*', " " + (text or ""))
+        for idx, seg in enumerate(segs):
+            pdf.set_font("Helvetica", "B" if idx % 2 == 1 else "", 9)
+            pdf.write(LH, seg)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.ln(LH)
 
     # Table header row
     _section_header()
@@ -1443,6 +1472,7 @@ def generate_notes_pdf(patient, notes_text):
     # Notes content — word-wrap each user line into table rows
     pdf.set_font("Helvetica", "", 9)
     max_w = TW - 6   # leave small text margin inside cell
+    _strip_markers = lambda t: _re_bold.sub(r'\*\*', '', t)
 
     for line in (_cn(notes_text) or "").split("\n"):
         if not line.strip():
@@ -1452,7 +1482,7 @@ def generate_notes_pdf(patient, notes_text):
         current = ""
         for word in words:
             candidate = (current + " " + word).lstrip() if current else word
-            if pdf.get_string_width(candidate) <= max_w:
+            if pdf.get_string_width(_strip_markers(candidate)) <= max_w:
                 current = candidate
             else:
                 if current:
@@ -1607,7 +1637,7 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
         if ik in _inf:
             st.session_state[f"inf_{ik}_cb"] = bool(_inf[ik])
         st.session_state[f"inf_{ik}_comment_inp"] = _inf.get(f"{ik}_comment", "")
-    for _ei in range(1, 4):
+    for _ei in range(1, _inf_count + 1):
         _es = f"inf_extra{_ei}"
         _saved_sel = _inf.get(f"{_es}_zusaetze_list", [])
         if isinstance(_saved_sel, list):
@@ -1646,11 +1676,15 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
     _tp_data  = tp  or {}
     _inf_data = inf or {}
     for sec in ["haupt", "bio", "med", "sonstiges"]:
-        for i in range(1, 4):
+        _sec_count = max(3, int(_tp_data.get(f"{sec}_extra_count", 3)))
+        st.session_state[f"{sec}_extra_count"] = _sec_count
+        for i in range(1, _sec_count + 1):
             slug = f"{sec}_extra{i}"
             st.session_state[slug + "_cb"]         = bool(_tp_data.get(slug + "_cb", False))
             st.session_state[slug + "_text_input"] = _tp_data.get(slug + "_text", "")
-    for i in range(1, 4):
+    _inf_count = max(3, int(_inf_data.get("inf_extra_count", 3)))
+    st.session_state["inf_extra_count"] = _inf_count
+    for i in range(1, _inf_count + 1):
         slug = f"inf_extra{i}"
         st.session_state[slug + "_cb"]         = bool(_inf_data.get(slug + "_cb", False))
         st.session_state[slug + "_text_input"] = _inf_data.get(slug + "_text", "")
@@ -1845,24 +1879,21 @@ def patient_inputs():
         if kontrolltermin_4:
             kt4_date = st.date_input("Datum 4 Wochen", value=therapiebeginn + timedelta(weeks=4),
                 format="DD.MM.YYYY", key="kt4_date_input")
-        kt4_zielparameter = st.text_input("Besondere Zielparameter", value=default_kt4_zp,
-            key="kt4_zielparameter_input", placeholder="Zielparameter...", label_visibility="visible")
     with col2:
         kontrolltermin_12 = st.checkbox("12 Wochen", value=default_kt12 and _kt12_ok, key="kontrolltermin_12_input",
             disabled=not _kt12_ok, help=None if _kt12_ok else f"Dauer {dauer} Mon. zu kurz")
         if kontrolltermin_12:
             kt12_date = st.date_input("Datum 12 Wochen", value=therapiebeginn + timedelta(weeks=12),
                 format="DD.MM.YYYY", key="kt12_date_input")
-        kt12_zielparameter = st.text_input("Besondere Zielparameter", value=default_kt12_zp,
-            key="kt12_zielparameter_input", placeholder="Zielparameter...", label_visibility="visible")
     with col3:
         kontrolltermin_24 = st.checkbox("24 Wochen", value=default_kt24 and _kt24_ok, key="kontrolltermin_24_input",
             disabled=not _kt24_ok, help=None if _kt24_ok else f"Dauer {dauer} Mon. zu kurz")
         if kontrolltermin_24:
             kt24_date = st.date_input("Datum 24 Monate", value=therapiebeginn + timedelta(weeks=96),
                 format="DD.MM.YYYY", key="kt24_date_input")
-        kt24_zielparameter = st.text_input("Besondere Zielparameter", value=default_kt24_zp,
-            key="kt24_zielparameter_input", placeholder="Zielparameter...", label_visibility="visible")
+    kt4_zielparameter  = st.session_state.get("kt4_zielparameter_input",  default_kt4_zp)
+    kt12_zielparameter = st.session_state.get("kt12_zielparameter_input", default_kt12_zp)
+    kt24_zielparameter = st.session_state.get("kt24_zielparameter_input", default_kt24_zp)
     kontrolltermin_kommentar = st.text_area("Kommentar:", value=default_kt_kommentar, height=80,
         placeholder="Kommentar zu Kontrollterminen...", key="kontrolltermin_kommentar_input")
 
@@ -2780,7 +2811,9 @@ def main():
             ]
             _NACL_OPTS = ["—", "Auf NaCl 50 ml", "Auf NaCl 100 ml", "Auf NaCl 250 ml", "Auf NaCl 500ml", "Auf 1000ml"]
             _QTY_OPTS  = ["1x", "2x", "3x", "4x", "5x"]
-            for _ei in range(1, 4):
+            _inf_count_key = "inf_extra_count"
+            _inf_n = max(3, int(st.session_state.get(_inf_count_key, inf.get(_inf_count_key, 3))))
+            for _ei in range(1, _inf_n + 1):
                 _slug   = f"inf_extra{_ei}"
                 _cb_key = _slug + "_cb"
                 _cols   = st.columns(INF_ROW_COLS)
@@ -2832,6 +2865,10 @@ def main():
                 for _item, _q in _qty_data.items():
                     _qs = _re_inf.sub(r'[^a-z0-9]+', '_', _item.lower()).strip('_')
                     infusion_schedule_data[f"{_slug}_zusatz_qty_{_qs}"] = _q
+            if st.button("＋", key="inf_extra_add", help="Zeile hinzufügen"):
+                st.session_state[_inf_count_key] = _inf_n + 1
+                st.rerun(scope="fragment")
+            infusion_schedule_data[_inf_count_key] = _inf_n
 
         new_inf = {
             "inf_custom1_cb": inf_custom1_cb, "inf_custom1_text": inf_custom1_text,
@@ -2881,9 +2918,24 @@ def main():
     @st.fragment
     def _notizen_tab():
         _tp_notizen = st.session_state.therapieplan_data
+        _pdata_n = st.session_state.patient_data
+
+        st.markdown('<div class="green-section-header">Besondere Zielparameter</div>', unsafe_allow_html=True)
+        _zp_col1, _zp_col2, _zp_col3 = st.columns(3)
+        with _zp_col1:
+            st.text_area("4 Wochen", value=_pdata_n.get("kt4_zielparameter", ""),
+                key="kt4_zielparameter_input", placeholder="Zielparameter 4 Wochen...", height=120)
+        with _zp_col2:
+            st.text_area("12 Wochen", value=_pdata_n.get("kt12_zielparameter", ""),
+                key="kt12_zielparameter_input", placeholder="Zielparameter 12 Wochen...", height=120)
+        with _zp_col3:
+            st.text_area("24 Wochen", value=_pdata_n.get("kt24_zielparameter", ""),
+                key="kt24_zielparameter_input", placeholder="Zielparameter 24 Wochen...", height=120)
+        st.markdown("---")
+
         st.markdown('<div class="green-section-header">Notizen & Bemerkungen</div>', unsafe_allow_html=True)
         _notes_val = _tp_notizen.get("notizen", "")
-        notes = st.text_area("", value=_notes_val, height=800,
+        notes = st.text_area("", value=_notes_val, height=1600,
             placeholder="Notizen und Bemerkungen...",
             key="notizen_text_input", label_visibility="collapsed")
         st.session_state.therapieplan_data["notizen"] = notes
