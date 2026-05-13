@@ -1546,7 +1546,12 @@ def _show_pdf_history(patient_name: str, pdf_type: str):
     """Render saved PDF history for a patient+tab. Call from inside a @st.fragment."""
     if not patient_name or not patient_name.strip():
         return
-    history = db.load_pdfs(patient_name, pdf_type)
+    try:
+        history = db.load_pdfs(patient_name, pdf_type)
+    except AttributeError:
+        return  # supabase_db not yet updated
+    except Exception:
+        return
     if not history:
         return
     st.markdown(
@@ -2478,7 +2483,8 @@ def main():
             _tp_fname = f"RevitaClinic_Therapieplan_{patient.get('patient','')}.pdf"
             _tp_pname = patient.get("patient", "")
             if _tp_pname.strip():
-                db.save_pdf(_tp_pname, "THERAPIEPLAN", _tp_fname, pdf_bytes)
+                try: db.save_pdf(_tp_pname, "THERAPIEPLAN", _tp_fname, pdf_bytes)
+                except Exception: pass
             st.session_state.auto_download_pdf = {
                 "data": pdf_bytes,
                 "filename": _tp_fname,
@@ -2708,7 +2714,8 @@ def main():
                     _nem_fname = f"RevitaClinic_NEM_{patient.get('patient','')}.pdf"
                     _nem_pname = patient.get("patient", "")
                     if _nem_pname.strip():
-                        db.save_pdf(_nem_pname, "NEM", _nem_fname, pdf_bytes)
+                        try: db.save_pdf(_nem_pname, "NEM", _nem_fname, pdf_bytes)
+                        except Exception: pass
                     st.session_state.auto_download_pdf = {
                         "data": pdf_bytes,
                         "filename": _nem_fname,
@@ -2995,7 +3002,8 @@ def main():
             _inf_fname = f"RevitaClinic_Infusionstherapie_{patient.get('patient','')}.pdf"
             _inf_pname = patient.get("patient", "")
             if _inf_pname.strip():
-                db.save_pdf(_inf_pname, "INFUSIONSTHERAPIE", _inf_fname, pdf_bytes)
+                try: db.save_pdf(_inf_pname, "INFUSIONSTHERAPIE", _inf_fname, pdf_bytes)
+                except Exception: pass
             st.session_state.auto_download_pdf = {
                 "data": pdf_bytes,
                 "filename": _inf_fname,
@@ -3050,7 +3058,8 @@ def main():
             _nz_fname = f"RevitaClinic_Notizen_{patient.get('patient','')}.pdf"
             _nz_pname = patient.get("patient", "")
             if _nz_pname.strip():
-                db.save_pdf(_nz_pname, "NOTIZEN", _nz_fname, _pdf_bytes)
+                try: db.save_pdf(_nz_pname, "NOTIZEN", _nz_fname, _pdf_bytes)
+                except Exception: pass
             st.session_state.auto_download_pdf = {
                 "data": _pdf_bytes,
                 "filename": _nz_fname,
