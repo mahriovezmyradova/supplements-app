@@ -1403,7 +1403,7 @@ def generate_pdf(patient, supplements, tab_name="NEM"):
 # =========================================================
 # PDF — NOTIZEN
 # =========================================================
-def generate_notes_pdf(patient, notes_text):
+def generate_notes_pdf(patient, notes_text, zp4="", zp12="", zp24=""):
     patient_name = patient.get("patient", "") if patient else ""
     pdf = PDF("L", "mm", "A4",
               tab_title="THERAPIEKONZEPT - NOTIZEN",
@@ -1463,6 +1463,51 @@ def generate_notes_pdf(patient, notes_text):
     pdf.set_font("Helvetica", "", 9)
     pdf.cell(TW - 28, LH, " " + _cn(patient_name), 1, 1, "L")
     pdf.ln(1)
+
+    # Besondere Zielparameter section
+    _zp_pairs = [("4 Wochen", zp4), ("12 Wochen", zp12), ("24 Wochen", zp24)]
+    if any(v and str(v).strip() for _, v in _zp_pairs):
+        pdf.set_fill_color(38, 96, 65); pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 9); pdf.set_x(LM)
+        pdf.cell(TW, 7, "  BESONDERE ZIELPARAMETER", 1, 1, "L", True)
+        pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "", 9)
+        for _zp_label, _zp_val in _zp_pairs:
+            _zp_text = _cn(str(_zp_val or "")).strip()
+            if not _zp_text:
+                continue
+            pdf.set_font("Helvetica", "B", 9); pdf.set_x(LM)
+            pdf.cell(28, LH, f"  {_zp_label}:", "LR", 0, "L")
+            pdf.set_font("Helvetica", "", 9)
+            # word-wrap the value into the remaining width
+            _zp_w = TW - 28
+            _zp_words = _zp_text.split(" "); _zp_cur = ""
+            _first_chunk = True
+            for _w in _zp_words:
+                _cand = (_zp_cur + " " + _w).lstrip() if _zp_cur else _w
+                if pdf.get_string_width(_cand) <= _zp_w - 4:
+                    _zp_cur = _cand
+                else:
+                    if _zp_cur:
+                        if _first_chunk:
+                            pdf.cell(_zp_w, LH, " " + _zp_cur, "LR", 1, "L"); _first_chunk = False
+                        else:
+                            _maybe_new_page(); pdf.set_x(LM)
+                            pdf.cell(28, LH, "", "LR", 0); pdf.cell(_zp_w, LH, " " + _zp_cur, "LR", 1, "L")
+                    _zp_cur = _w
+            if _zp_cur:
+                if _first_chunk:
+                    pdf.cell(_zp_w, LH, " " + _zp_cur, "LR", 1, "L")
+                else:
+                    _maybe_new_page(); pdf.set_x(LM)
+                    pdf.cell(28, LH, "", "LR", 0); pdf.cell(_zp_w, LH, " " + _zp_cur, "LR", 1, "L")
+        pdf.set_x(LM); pdf.cell(TW, 0, "", "T")
+        pdf.ln(3)
+        # Sub-header for the notes section that follows
+        pdf.set_fill_color(38, 96, 65); pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 9); pdf.set_x(LM)
+        pdf.cell(TW, 7, "  NOTIZEN & BEMERKUNGEN", 1, 1, "L", True)
+        pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", "", 9)
+        pdf.ln(1)
 
     # Notes content — word-wrap each user line into table rows
     pdf.set_font("Helvetica", "", 9)
@@ -1620,6 +1665,7 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
 
     # ── Infusion checkbox + comment widgets ──
     _inf = inf or {}
+    _inf_count = max(3, int(_inf.get("inf_extra_count", 3)))
     for ik in ["revita_immune","revita_immune_plus","revita_heal","revita_bludder",
                "revita_ferro","revita_energy","revita_focus","revita_nad","revita_relax",
                "revita_fit","revita_hangover","revita_beauty","revita_antiaging",
@@ -1677,12 +1723,11 @@ def _apply_patient_to_session(pd_, nem, tp, ern, inf, name):
             slug = f"{sec}_extra{i}"
             st.session_state[slug + "_cb"]         = bool(_tp_data.get(slug + "_cb", False))
             st.session_state[slug + "_text_input"] = _tp_data.get(slug + "_text", "")
-    _inf_count = max(3, int(_inf_data.get("inf_extra_count", 3)))
     st.session_state["inf_extra_count"] = _inf_count
     for i in range(1, _inf_count + 1):
         slug = f"inf_extra{i}"
-        st.session_state[slug + "_cb"]         = bool(_inf_data.get(slug + "_cb", False))
-        st.session_state[slug + "_text_input"] = _inf_data.get(slug + "_text", "")
+        st.session_state[slug + "_cb"]          = bool(_inf_data.get(slug + "_cb", False))
+        st.session_state[slug + "_text_input"]  = _inf_data.get(slug + "_text", "")
         st.session_state[slug + "_comment_inp"] = _inf_data.get(slug + "_comment", "")
     for j in range(1, 3):
         st.session_state[f"inf_custom{j}_cb"]   = bool(_inf_data.get(f"inf_custom{j}_cb", False))
@@ -1713,10 +1758,16 @@ def patient_inputs():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # ── Patient header: title + dropdown selector side by side ──
-    hdr_col, dd_col = st.columns([2, 2])
+    # ── Patient header: title + last-autosave timestamp + dropdown selector ──
+    hdr_col, ts_col, dd_col = st.columns([1.4, 1.6, 2])
     with hdr_col:
         st.markdown("#### Patientendaten")
+    with ts_col:
+        _last_as_label = st.session_state.get("_autosave_label", "")
+        if _last_as_label:
+            st.markdown(
+                f"<div style='font-size:11px;color:#aaa;padding-top:14px'>{_last_as_label}</div>",
+                unsafe_allow_html=True)
     with dd_col:
         dd_options = ["— Patient auswählen —"] + patient_names
         dd_key = "patient_dropdown_select"
@@ -2926,13 +2977,24 @@ def main():
         st.markdown("---")
 
         st.markdown('<div class="green-section-header">Notizen & Bemerkungen</div>', unsafe_allow_html=True)
+        st.markdown(
+            "<div style='font-size:11px;color:#888;padding:2px 0 4px 0'>"
+            "Formatierung: <code>**Wort**</code> → <b>fett</b> &nbsp;|&nbsp; "
+            "Leerzeile = Absatz"
+            "</div>",
+            unsafe_allow_html=True)
         _notes_val = _tp_notizen.get("notizen", "")
         notes = st.text_area("", value=_notes_val, height=1600,
             placeholder="Notizen und Bemerkungen...",
             key="notizen_text_input", label_visibility="collapsed")
         st.session_state.therapieplan_data["notizen"] = notes
         if st.button("Notizen PDF generieren", key="notizen_pdf_button"):
-            _pdf_bytes = generate_notes_pdf(patient, notes)
+            _pdf_bytes = generate_notes_pdf(
+                patient, notes,
+                zp4=st.session_state.get("kt4_zielparameter_input", ""),
+                zp12=st.session_state.get("kt12_zielparameter_input", ""),
+                zp24=st.session_state.get("kt24_zielparameter_input", ""),
+            )
             st.session_state.auto_download_pdf = {
                 "data": _pdf_bytes,
                 "filename": f"RevitaClinic_Notizen_{patient.get('patient','')}.pdf",
@@ -3056,11 +3118,13 @@ def main():
 
             ok = save_patient_data(patient_for_db, nem_to_save, tp_db, ern_db, inf_db)
             if ok:
+                import datetime as _dt_save
                 st.session_state.nem_prescriptions = nem_to_save
                 st.session_state.show_save_success = True
                 st.session_state.last_loaded_patient = patient_for_db["patient"]
                 st.session_state["_set_dropdown"] = patient_for_db["patient"]
-                # Flag: treat as saved patient immediately on next render
+                st.session_state["_autosave_label"] = (
+                    "Gespeichert: " + _dt_save.datetime.now().strftime("%d.%m.%Y %H:%M"))
                 st.session_state["_just_saved_patient"] = patient_for_db["patient"]
                 st.rerun()
             else:
@@ -3070,13 +3134,13 @@ def main():
         with tabs[4]:
             admin_panel(db)
 
-    # ── Autosave (every 120s if data changed and patient already exists in DB) ──
+    # ── Autosave (every 60s if data changed and patient already exists in DB) ──
     _last_loaded = st.session_state.get("last_loaded_patient", "")
     if _last_loaded and patient.get("patient", "").strip() == _last_loaded:
         import time as _time
         import hashlib as _hashlib
         _now = _time.time()
-        _cooldown = 120
+        _cooldown = 60
         _last_as = st.session_state.get("_autosave_time", 0)
         if _now - _last_as >= _cooldown:
             def _quick_ser(obj):
@@ -3098,9 +3162,11 @@ def main():
                                         _quick_ser(st.session_state.get("ernaehrung_data", {})),
                                         _as_inf)
                 if _ok:
-                    st.session_state["_autosave_time"] = _now
-                    st.session_state["_autosave_hash"] = _as_hash
-                    st.toast("Automatisch gespeichert")
+                    import datetime as _dt_as
+                    st.session_state["_autosave_time"]  = _now
+                    st.session_state["_autosave_hash"]  = _as_hash
+                    st.session_state["_autosave_label"] = (
+                        "Autosave: " + _dt_as.datetime.now().strftime("%d.%m.%Y %H:%M"))
 
     # Auto-download PDF
     if st.session_state.get("auto_download_pdf"):
