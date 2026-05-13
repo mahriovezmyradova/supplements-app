@@ -1540,14 +1540,46 @@ def generate_notes_pdf(patient, notes_text, zp4="", zp12="", zp24=""):
 
 
 # =========================================================
-# PDF DISPLAY HELPERS
+# PDF DISPLAY HELPER
 # =========================================================
-def _show_last_pdf(tab_type: str, patient_name: str):
-    """Show the most recently generated PDF for this tab (persists in session state)."""
-    _lpdf = st.session_state.get(f"_last_pdf_{tab_type}")
-    if not _lpdf or _lpdf.get("patient") != patient_name:
+def _show_pdf_panel(tab_type: str, patient_name: str):
+    """Show all saved PDFs for a tab. Most recent shown prominently; older below.
+    Falls back to Supabase after refresh so the design persists across sessions."""
+    if not patient_name or not patient_name.strip():
         return
-    c1, c2 = st.columns([2, 2.5])
+
+    # Fetch all records once
+    try:
+        all_records = db.load_pdfs(patient_name, tab_type)
+    except Exception:
+        all_records = []
+
+    # Resolve the "most recent" entry:
+    # Prefer session state (just generated), otherwise use top Supabase record.
+    _ss_key = f"_last_pdf_{tab_type}"
+    _lpdf = st.session_state.get(_ss_key)
+    if not _lpdf or _lpdf.get("patient") != patient_name:
+        if not all_records:
+            return
+        rec0 = all_records[0]
+        try:
+            _lpdf = {
+                "data": base64.b64decode(rec0["pdf_data"]),
+                "filename": rec0.get("filename") or f"{tab_type}.pdf",
+                "patient": patient_name,
+                "generated_at": rec0.get("generated_at", "")[:16].replace("T", " "),
+                "_id": rec0["id"],
+            }
+            st.session_state[_ss_key] = _lpdf
+        except Exception:
+            return
+        older = all_records[1:]
+    else:
+        # Session state has the freshest — older = everything in Supabase
+        older = all_records[1:]  # all_records[0] is the same PDF already shown
+
+    # ── Most recent PDF ──────────────────────────────────────
+    c1, c2, c3 = st.columns([2, 2.3, 0.2])
     with c1:
         st.markdown(
             f"<div style='padding-top:7px;font-size:13px;color:#555'>"
@@ -1558,43 +1590,33 @@ def _show_last_pdf(tab_type: str, patient_name: str):
             "↓ PDF herunterladen", data=_lpdf["data"],
             file_name=_lpdf["filename"], mime="application/pdf",
             key=f"dl_last_{tab_type}")
+    with c3:
+        _rec_id = _lpdf.get("_id") or (all_records[0]["id"] if all_records else None)
+        if _rec_id and st.button("−", key=f"del_last_{tab_type}", help="PDF löschen"):
+            db.delete_pdf(_rec_id)
+            del st.session_state[_ss_key]
+            st.rerun(scope="fragment")
 
-
-def _show_pdf_history(patient_name: str, pdf_type: str):
-    """Render saved PDF history for a patient+tab. Call from inside a @st.fragment."""
-    if not patient_name or not patient_name.strip():
-        return
-    try:
-        history = db.load_pdfs(patient_name, pdf_type)
-    except AttributeError:
-        return  # supabase_db not yet updated
-    except Exception:
-        return
-    if not history:
-        return
-    st.markdown(
-        "<div style='font-size:12px;color:#888;margin:8px 0 4px 0;font-weight:600'>"
-        "Gespeicherte PDFs</div>",
-        unsafe_allow_html=True)
-    for rec in history:
+    # ── Older PDFs ───────────────────────────────────────────
+    for rec in older:
         _raw_dt = rec.get("generated_at", "")[:16].replace("T", " ")
         try:
-            _pdf_bytes = base64.b64decode(rec["pdf_data"])
+            _pb = base64.b64decode(rec["pdf_data"])
         except Exception:
             continue
-        _fname = rec.get("filename") or f"{pdf_type}_{_raw_dt}.pdf"
-        c1, c2, c3 = st.columns([1.6, 2, 0.2])
-        with c1:
+        _fn = rec.get("filename") or f"{tab_type}_{_raw_dt}.pdf"
+        oc1, oc2, oc3 = st.columns([2, 2.3, 0.2])
+        with oc1:
             st.markdown(
-                f"<div style='padding-top:7px;font-size:13px;color:#555'>{_raw_dt}</div>",
+                f"<div style='padding-top:7px;font-size:13px;color:#888'>{_raw_dt}</div>",
                 unsafe_allow_html=True)
-        with c2:
+        with oc2:
             st.download_button(
-                "↓ PDF herunterladen", data=_pdf_bytes,
-                file_name=_fname, mime="application/pdf",
-                key=f"hist_dl_{pdf_type}_{rec['id']}")
-        with c3:
-            if st.button("−", key=f"hist_del_{pdf_type}_{rec['id']}", help="PDF löschen"):
+                "↓ PDF herunterladen", data=_pb,
+                file_name=_fn, mime="application/pdf",
+                key=f"hist_dl_{tab_type}_{rec['id']}")
+        with oc3:
+            if st.button("−", key=f"hist_del_{tab_type}_{rec['id']}", help="PDF löschen"):
                 db.delete_pdf(rec["id"])
                 st.rerun(scope="fragment")
 
@@ -2512,8 +2534,7 @@ def main():
                 try: db.save_pdf(_tp_pname, "THERAPIEPLAN", _tp_fname, pdf_bytes)
                 except Exception: pass
             st.rerun(scope="fragment")
-        _show_last_pdf("THERAPIEPLAN", patient.get("patient", ""))
-        _show_pdf_history(patient.get("patient", ""), "THERAPIEPLAN")
+        _show_pdf_panel("THERAPIEPLAN", patient.get("patient", ""))
 
     with tabs[0]:
         _therapieplan_tab()
@@ -2747,8 +2768,7 @@ def main():
                     st.rerun(scope="fragment")
                 else:
                     st.warning("⚠️ Keine NEM-Supplemente ausgewählt.")
-        _show_last_pdf("NEM", patient.get("patient", ""))
-        _show_pdf_history(patient.get("patient", ""), "NEM")
+        _show_pdf_panel("NEM", patient.get("patient", ""))
 
     with tabs[1]:
         _nem_tab()
@@ -3035,8 +3055,7 @@ def main():
                 try: db.save_pdf(_inf_pname, "INFUSIONSTHERAPIE", _inf_fname, pdf_bytes)
                 except Exception: pass
             st.rerun(scope="fragment")
-        _show_last_pdf("INFUSIONSTHERAPIE", patient.get("patient", ""))
-        _show_pdf_history(patient.get("patient", ""), "INFUSIONSTHERAPIE")
+        _show_pdf_panel("INFUSIONSTHERAPIE", patient.get("patient", ""))
 
     with tabs[2]:
         _infusion_tab()
@@ -3093,8 +3112,7 @@ def main():
                 "generated_at": _dg.datetime.now().strftime("%d.%m.%Y %H:%M"),
             }
             st.rerun(scope="fragment")
-        _show_last_pdf("NOTIZEN", patient.get("patient", ""))
-        _show_pdf_history(patient.get("patient", ""), "NOTIZEN")
+        _show_pdf_panel("NOTIZEN", patient.get("patient", ""))
 
     with tabs[3]:
         _notizen_tab()
