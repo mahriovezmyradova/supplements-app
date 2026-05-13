@@ -27,8 +27,6 @@ def _coerce_date(v):
 def _week_opts(total_weeks):
     return ["0"] + [str(w) for w in range(1, total_weeks + 1)]
 
-# Gray dim cell for unchecked timing slots (cheap markdown vs disabled widget)
-_DIM = "<div style='padding:3px 2px;color:#ccc;font-size:11px;min-height:1.6em'>{}</div>"
 
 def strip_dosage(name):
     """Remove trailing dosage/unit info from supplement name (e.g. '1000mg', '1 EL', '= 2g EPA/DHA')."""
@@ -578,28 +576,6 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
     de_key      = f"{key_prefix}_{slug}_date_end"
     freq_key    = f"{key_prefix}_{slug}_freq"
 
-    # Unchecked rows: show stored values as lightweight dim text (no interactive widgets).
-    # This preserves all column positions while being ~6× cheaper than disabled widgets.
-    if not is_checked:
-        def _fv(k, d="—"): v = str(data_store.get(k, "")); return v if v and v != "0" else d
-        def _fd(k):
-            v = _coerce_date(data_store.get(k)); return v.strftime("%d.%m.%Y") if v else "—"
-        cols[1].markdown(_DIM.format("4W"),        unsafe_allow_html=True)
-        cols[2].markdown(_DIM.format("12W"),       unsafe_allow_html=True)
-        cols[3].markdown(_DIM.format(_fv(w_start_key)), unsafe_allow_html=True)
-        cols[4].markdown(_DIM.format(_fv(w_end_key)),   unsafe_allow_html=True)
-        cols[5].markdown(_DIM.format(_fv(freq_key)),    unsafe_allow_html=True)
-        cols[6].markdown(_DIM.format(_fd(ds_key)),      unsafe_allow_html=True)
-        cols[7].markdown(_DIM.format(_fd(de_key)),      unsafe_allow_html=True)
-        return {
-            w_start_key: str(data_store.get(w_start_key, "0")),
-            w_end_key:   str(data_store.get(w_end_key, "0")),
-            ds_key:      data_store.get(ds_key),
-            de_key:      data_store.get(de_key),
-            freq_key:    str(data_store.get(freq_key, "")),
-        }
-
-    # Checked rows: full interactive widgets
     tb        = _coerce_date(therapiebeginn)
     week_opts = _week_opts(total_weeks)
 
@@ -612,28 +588,28 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
 
     # Shortcut buttons: 4W → Wo.Start=1, Wo.Ende=4; 12W → Wo.Start=1, Wo.Ende=12
     with cols[1]:
-        if st.button("4W", key=f"q4_{key_prefix}_{slug}"):
+        if st.button("4W", key=f"q4_{key_prefix}_{slug}", disabled=not is_checked):
             st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
             st.session_state[f"we_{key_prefix}_{slug}"] = str(min(4, total_weeks))
     with cols[2]:
-        if st.button("12W", key=f"q12_{key_prefix}_{slug}"):
+        if st.button("12W", key=f"q12_{key_prefix}_{slug}", disabled=not is_checked):
             st.session_state[f"ws_{key_prefix}_{slug}"] = "1"
             st.session_state[f"we_{key_prefix}_{slug}"] = str(min(12, total_weeks))
 
     ws_idx = week_opts.index(saved_ws)
     w_start_sel = cols[3].selectbox("", week_opts, index=ws_idx,
-        key=f"ws_{key_prefix}_{slug}", label_visibility="collapsed")
+        key=f"ws_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
 
     w_start_int = int(w_start_sel) if w_start_sel != "0" else 0
     we_opts = week_opts[:] if w_start_int == 0 else [str(w) for w in range(w_start_int, total_weeks + 1)]
     if saved_we not in we_opts: saved_we = we_opts[0]
     we_idx = we_opts.index(saved_we)
     w_end_sel = cols[4].selectbox("", we_opts, index=we_idx,
-        key=f"we_{key_prefix}_{slug}", label_visibility="collapsed")
+        key=f"we_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
 
     fi   = _FREQ_OPTIONS.index(saved_freq) if saved_freq in _FREQ_OPTIONS else 0
     freq = cols[5].selectbox("", _FREQ_OPTIONS, index=fi,
-        key=f"fr_{key_prefix}_{slug}", label_visibility="collapsed")
+        key=f"fr_{key_prefix}_{slug}", disabled=not is_checked, label_visibility="collapsed")
 
     w_end_int = int(w_end_sel) if w_end_sel != "0" else 0
 
@@ -641,16 +617,16 @@ def _inline_timing(is_checked, slug, therapiebeginn, dauer_monate, key_prefix, d
         auto_ds = tb + timedelta(weeks=w_start_int - 1)
         auto_de = tb + timedelta(weeks=w_end_int) - timedelta(days=1)
         date_start = cols[6].date_input("", value=auto_ds, format="DD.MM.YYYY",
-            key=f"ds_{key_prefix}_{slug}_{auto_ds.isoformat()}", label_visibility="collapsed")
+            key=f"ds_{key_prefix}_{slug}_{auto_ds.isoformat()}", disabled=not is_checked, label_visibility="collapsed")
         date_end   = cols[7].date_input("", value=auto_de, format="DD.MM.YYYY",
-            key=f"de_{key_prefix}_{slug}_{auto_de.isoformat()}", label_visibility="collapsed")
+            key=f"de_{key_prefix}_{slug}_{auto_de.isoformat()}", disabled=not is_checked, label_visibility="collapsed")
     else:
         _ds_saved = _coerce_date(data_store.get(ds_key)) if data_store.get(ds_key) else None
         _de_saved = _coerce_date(data_store.get(de_key)) if data_store.get(de_key) else None
         date_start = cols[6].date_input("", value=_ds_saved, format="DD.MM.YYYY",
-            key=f"ds_{key_prefix}_{slug}_free", label_visibility="collapsed")
+            key=f"ds_{key_prefix}_{slug}_free", disabled=not is_checked, label_visibility="collapsed")
         date_end   = cols[7].date_input("", value=_de_saved, format="DD.MM.YYYY",
-            key=f"de_{key_prefix}_{slug}_free", label_visibility="collapsed")
+            key=f"de_{key_prefix}_{slug}_free", disabled=not is_checked, label_visibility="collapsed")
 
     return {
         w_start_key: w_start_sel, w_end_key: w_end_sel,
@@ -1874,15 +1850,14 @@ def patient_inputs():
     with _al_c2:
         bekannte_allergie = st.text_input("", value=default_allergie,
             placeholder="Allergien...", key="allergie_input", label_visibility="collapsed")
-    diagnosen = st.text_area("Diagnosen", value=default_diagnosen, height=160,
+    diagnosen = st.text_area("Diagnosen", value=default_diagnosen, height=100,
         placeholder="Relevante Diagnosen...", key="diagnosen_input")
     ziele = st.text_input("Ziele der Behandlung sind:", value=default_ziele,
         placeholder="Behandlungsziele...", key="ziele_input")
-    aerztliche_kurzbewertung = st.text_area("Ärztliche Kurzbewertung", value=default_aerztliche, height=120,
+    aerztliche_kurzbewertung = st.text_area("Ärztliche Kurzbewertung", value=default_aerztliche, height=80,
         placeholder="Ärztliche Kurzbewertung...", key="aerztliche_kurzbewertung_input")
 
-    st.markdown("---")
-    st.markdown("#### Kontrolltermine")
+    st.markdown("<div style='margin:6px 0 2px 0;font-weight:600;font-size:14px;'>Kontrolltermine</div>", unsafe_allow_html=True)
     _total_weeks = int(dauer) * 4
     _kt4_ok  = _total_weeks >= 4
     _kt12_ok = _total_weeks >= 12
@@ -1913,10 +1888,9 @@ def patient_inputs():
     kt4_zielparameter  = st.session_state.get("kt4_zielparameter_input",  default_kt4_zp)
     kt12_zielparameter = st.session_state.get("kt12_zielparameter_input", default_kt12_zp)
     kt24_zielparameter = st.session_state.get("kt24_zielparameter_input", default_kt24_zp)
-    kontrolltermin_kommentar = st.text_area("Kommentar:", value=default_kt_kommentar, height=80,
+    kontrolltermin_kommentar = st.text_area("Kommentar:", value=default_kt_kommentar, height=60,
         placeholder="Kommentar zu Kontrollterminen...", key="kontrolltermin_kommentar_input")
 
-    st.markdown("---")
     therapy_progress_bar(
         therapiebeginn, dauer,
         kt4=kontrolltermin_4, kt12=kontrolltermin_12, kt24=kontrolltermin_24,
